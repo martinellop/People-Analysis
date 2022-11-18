@@ -6,17 +6,21 @@ distances, directions and making possible super-resolution on faces and licence 
 those circumstances in which the available resolution is not acceptable.
 
 
-### 1. Topic: Tracking and People analysis, distance estimation, pose estimation and
+### 1. Topic: 
+Tracking and People analysis, distance estimation, pose estimation and
 super-resolution on faces and licence plates.
 
-### 2. Data: MotsynthCollect for people tracking, LTFT for long-term face tracking,CelebA
-and some video surveillance recorded by us.
+### 2. Data: 
+a) MotsynthCollect for people tracking,
+b) LTFT for long-term face tracking,
+c) CelebA and some video surveillance recorded by us.
 
 ### 3. Pipeline:
-a. Tracking people and segment the shape of every person in the video
-b. With the use of some classical image processing methods, estimate the pose
+a) Tracking people and segment the shape of every person in the video
+b) With the use of some classical image processing methods, estimate the pose
 of the people and the distance between them.
-c. Make it possible to allow the user to, when the video is in pause, to select an
+
+c) Make it possible to allow the user to, when the video is in pause, to select an
 area of the image, and in accordance with that region find, eventually, a face
 or a license plate and, through the use of a generative autoencoder,
 super-resoluted it.
