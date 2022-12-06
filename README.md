@@ -1,4 +1,4 @@
-# People-Analysis
+# Tracking-and-People-Analysis
 
 The scope of our project is to perform analysis about people's behaviour through a video
 stream, like from a surveillance camera, gathering information about human poses,
