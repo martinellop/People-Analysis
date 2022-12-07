@@ -78,12 +78,7 @@ def detect(settings):
     names = model.module.names if hasattr(model, 'module') else model.names
     colors = [[random.randint(0, 255) for _ in range(3)] for _ in names]
 
-    if settings.target_class in names:
-        target_class = names.index(settings.target_class)
-    else:
-        target_class = None
-
-    debugPrint("classes:",names)
+    #debugPrint("classes:",names)
 
     # Run inference
     if device.type != 'cpu':
@@ -92,7 +87,28 @@ def detect(settings):
     old_img_b = 1
 
     t0 = time.time()
+
+    frame_number = -1
+    old_path = ""
+    last_frame_saved = -1
+
     for path, img, im0s, vid_cap in dataset:
+
+        if frame_number >= 0 and old_path != path:
+            #video changed (multiple videos)
+            frame_number = -1
+            last_frame_saved = -1
+        old_path = path
+        frame_number += 1
+
+
+        if dataset.mode == 'video':
+            if last_frame_saved >= 0 and frame_number - last_frame_saved < settings.video_crop_min_frame_interval:
+                #in this case, we want to skip some frames (in order to gain diversity in output).
+                #let's skip them before sending to the model, improving efficiency.
+                continue
+
+        debugPrint(f"\nframe number: {frame_number}")
         img = torch.from_numpy(img).to(device)
         img = img.half() if half else img.float()  # uint8 to fp16/32
         img /= 255.0  # 0 - 255 to 0.0 - 1.0
@@ -112,12 +128,12 @@ def detect(settings):
         with torch.no_grad():   # Calculating gradients would cause a GPU memory leak
             pred = model(img, augment=settings.augment)[0]
         t2 = time_synchronized()
-        debugPrint("boxes before NMS:",len(pred[0]))
+        #debugPrint("boxes before NMS:",len(pred[0]))
 
         # Apply NMS
         pred = non_max_suppression(pred, settings.conf_thres, settings.iou_thres, classes=settings.classes, agnostic=settings.agnostic_nms)
         t3 = time_synchronized()
-        debugPrint("boxes after NMS:",len(pred[0]))
+        #debugPrint("boxes after NMS:",len(pred[0]))
 
         # Apply Classifier
         if classify:
@@ -139,22 +155,16 @@ def detect(settings):
                 det[:, :4] = scale_coords(img.shape[2:], det[:, :4], im0.shape).round()
 
                 #printing
-                if target_class != None:
-                    n = (det[:, -1] == target_class).sum() #detections found 
-                    s += f"{n} {names[target_class]}{'s' * (n > 1)} "  # add to string
-                else:
-                    for c in det[:,-1].unique():
-                        n = (det[:, -1] == c).sum() #detections found 
-                        s += f"{n} {names[int(c)]}{'s' * (n > 1)}, "  # add to string
+                for c in det[:,-1].unique():
+                    n = (det[:, -1] == c).sum() #detections found 
+                    s += f"{n} {names[int(c)]}{'s' * (n > 1)}, "  # add to string
 
                 # Write results
                 suffix_id=0
                 correct_labels=0
                 for *xyxy, conf, cls in reversed(det):
-                    if target_class != None and cls != target_class:
-                        continue
 
-                    debugPrint(f"class:{names[int(cls)]}\t", "bbox: ", xyxy)
+                    #debugPrint(f"class:{names[int(cls)]}\t", "bbox: ", xyxy)
 
                     if save_txt:  # Write to file
                         xywh = (xyxy2xywh(torch.tensor(xyxy).view(1, 4)) / gn).view(-1).tolist()  # normalized xywh
@@ -163,11 +173,25 @@ def detect(settings):
                             f.write(('%g ' * len(line)).rstrip() % line + '\n')
 
                     if settings.save_only_crop:
-                        img = im0[int(xyxy[1]):int(xyxy[3]), int(xyxy[0]):int(xyxy[2])]
-                        pointIdx = len(save_path) - save_path[::-1].find('.') -1
-                        final_path = save_path[:pointIdx] + '_' + str(suffix_id) + save_path[pointIdx:]
-                        cv2.imwrite(final_path,img)
-                        suffix_id+=1
+                        if dataset.mode == 'image':
+                            img = im0[int(xyxy[1]):int(xyxy[3]), int(xyxy[0]):int(xyxy[2])]
+                            pointIdx = len(save_path) - save_path[::-1].find('.') -1
+                            final_path = save_path[:pointIdx] + '_' + str(suffix_id) + save_path[pointIdx:]
+                            cv2.imwrite(final_path,img)
+                            suffix_id+=1
+                        elif dataset.mode == 'video':
+                            if last_frame_saved < 0 or last_frame_saved == frame_number or frame_number - last_frame_saved >= settings.video_crop_min_frame_interval:
+                                min_x, max_x = int(xyxy[0]), int(xyxy[2])
+                                min_y, max_y = int(xyxy[1]), int(xyxy[3])
+                                if (max_x - min_x) * (max_y - min_y) >= settings.video_crop_min_area:
+                                    last_frame_saved = frame_number
+                                    img = im0[min_y:max_y, min_x:max_x]
+                                    pointIdx = len(save_path) - save_path[::-1].find('.') -1
+                                    final_path = save_path[:pointIdx] + f'_f{frame_number}_' + str(suffix_id) + ".jpg"
+                                    cv2.imwrite(final_path,img)
+                                    suffix_id+=1
+
+
 
                     if save_img or view_img:  # Add bbox to image
                         label = f'{names[int(cls)]} {conf:.2f}'
@@ -183,7 +207,7 @@ def detect(settings):
                 cv2.waitKey(1)  # 1 millisecond
 
             # Save results (image with detections)
-            if save_img:
+            if save_img:    #disabled when save_only_crop is active
                 if dataset.mode == 'image':
                     if correct_labels > 0:
                         cv2.imwrite(save_path, im0)
@@ -230,8 +254,11 @@ if __name__ == '__main__':
     parser.add_argument('--exist-ok', action='store_true', help='existing project/name ok, do not increment')
     parser.add_argument('--no-trace', action='store_true', help='don`t trace model')
 
-    parser.add_argument('--target_class', type=str, default='_no_target_', help='detect only this class')
     parser.add_argument('--save_only_crop', action='store_true', help='output will be cropped images')
+    parser.add_argument('--video_crop_min_area', type=int, default=0, help='minimum number of pixels in detected box for a crop')
+    parser.add_argument('--video_crop_min_frame_interval', type=int, default=1, help='minimum number of frames to be skipped from last crop-saved frame')
+
+
 
     settings = parser.parse_args()
     print(settings)
