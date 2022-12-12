@@ -183,13 +183,15 @@ def detect(settings):
                             if last_frame_saved < 0 or last_frame_saved == frame_number or frame_number - last_frame_saved >= settings.video_crop_min_frame_interval:
                                 min_x, max_x = int(xyxy[0]), int(xyxy[2])
                                 min_y, max_y = int(xyxy[1]), int(xyxy[3])
-                                if (max_x - min_x) * (max_y - min_y) >= settings.video_crop_min_area:
-                                    last_frame_saved = frame_number
-                                    img = im0[min_y:max_y, min_x:max_x]
-                                    pointIdx = len(save_path) - save_path[::-1].find('.') -1
-                                    final_path = save_path[:pointIdx] + f'_f{frame_number}_' + str(suffix_id) + ".jpg"
-                                    cv2.imwrite(final_path,img)
-                                    suffix_id+=1
+                                area = (max_x - min_x) * (max_y - min_y)
+                                if area >= settings.video_crop_min_area:
+                                    if(settings.video_crop_max_area < 0 or area <= settings.video_crop_max_area):
+                                        last_frame_saved = frame_number
+                                        img = im0[min_y:max_y, min_x:max_x]
+                                        pointIdx = len(save_path) - save_path[::-1].find('.') -1
+                                        final_path = save_path[:pointIdx] + f'_f{frame_number}_' + str(suffix_id) + ".jpg"
+                                        cv2.imwrite(final_path,img)
+                                        suffix_id+=1
 
 
 
@@ -256,6 +258,7 @@ if __name__ == '__main__':
 
     parser.add_argument('--save_only_crop', action='store_true', help='output will be cropped images')
     parser.add_argument('--video_crop_min_area', type=int, default=0, help='minimum number of pixels in detected box for a crop')
+    parser.add_argument('--video_crop_max_area', type=int, default=-1, help='maximum number of pixels in detected box for a crop')
     parser.add_argument('--video_crop_min_frame_interval', type=int, default=1, help='minimum number of frames to be skipped from last crop-saved frame')
 
 
