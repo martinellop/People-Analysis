@@ -180,18 +180,17 @@ def detect(settings):
                             cv2.imwrite(final_path,img)
                             suffix_id+=1
                         elif dataset.mode == 'video':
-                            if last_frame_saved < 0 or last_frame_saved == frame_number or frame_number - last_frame_saved >= settings.video_crop_min_frame_interval:
-                                min_x, max_x = int(xyxy[0]), int(xyxy[2])
-                                min_y, max_y = int(xyxy[1]), int(xyxy[3])
-                                area = (max_x - min_x) * (max_y - min_y)
-                                if area >= settings.video_crop_min_area:
-                                    if(settings.video_crop_max_area < 0 or area <= settings.video_crop_max_area):
-                                        last_frame_saved = frame_number
-                                        img = im0[min_y:max_y, min_x:max_x]
-                                        pointIdx = len(save_path) - save_path[::-1].find('.') -1
-                                        final_path = save_path[:pointIdx] + f'_f{frame_number}_' + str(suffix_id) + ".jpg"
-                                        cv2.imwrite(final_path,img)
-                                        suffix_id+=1
+                            min_x, max_x = int(xyxy[0]), int(xyxy[2])
+                            min_y, max_y = int(xyxy[1]), int(xyxy[3])
+                            area = (max_x - min_x) * (max_y - min_y)
+                            if area >= settings.video_crop_min_area:
+                                if(settings.video_crop_max_area < 0 or area <= settings.video_crop_max_area):
+                                    last_frame_saved = frame_number
+                                    img = im0[min_y:max_y, min_x:max_x]
+                                    pointIdx = len(save_path) - save_path[::-1].find('.') -1
+                                    final_path = save_path[:pointIdx] + f'_f{frame_number}_' + str(suffix_id) + ".jpg"
+                                    cv2.imwrite(final_path,img)
+                                    suffix_id+=1
 
 
 
@@ -251,7 +250,6 @@ if __name__ == '__main__':
     parser.add_argument('--classes', nargs='+', type=int, help='filter by class: --class 0, or --class 0 2 3')
     parser.add_argument('--agnostic-nms', action='store_true', help='class-agnostic NMS')
     parser.add_argument('--augment', action='store_true', help='augmented inference')
-    parser.add_argument('--update', action='store_true', help='update all models')
     parser.add_argument('--output', default='outputs', help='results directory')
     parser.add_argument('--exist-ok', action='store_true', help='existing project/name ok, do not increment')
     parser.add_argument('--no-trace', action='store_true', help='don`t trace model')
@@ -266,11 +264,4 @@ if __name__ == '__main__':
     settings = parser.parse_args()
     print(settings)
     #check_requirements(exclude=('pycocotools', 'thop'))
-
-    with torch.no_grad():
-        if settings.update:  # update all models (to fix SourceChangeWarning)
-            for settings.weights in ['yolov7.pt']:
-                detect(settings)
-                strip_optimizer(settings.weights)
-        else:
-            detect(settings)
+    detect(settings)
