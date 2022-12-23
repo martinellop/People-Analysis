@@ -39,7 +39,7 @@ class PeopleDB:
         idx = torch.argmin(distances)
         #print("idx_shape: ", idx.shape)
 
-        #print(f"Min dist: {distances[idx]} in {distances}")
+        #print(f"Min dist: {float(distances[idx])}")
 
         if distances[idx] <= self._dist_threshold_:
             #we got a match

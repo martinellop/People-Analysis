@@ -49,9 +49,10 @@ class HOGLayer(nn.Module):
             out.scatter_add_(1, phase_int.ceil().long()%self.nbins, 1 - norm)
             
             res = self.pooler(out)
-            res = torch.nn.functional.normalize(res,dim=1)
-            
-            return res.reshape(res.shape[0],-1)
+            normed_res = res.reshape(n,self.nbins,-1)
+            #normalization on the whole descriptor
+            torch.nn.functional.normalize(normed_res,dim=-1,out=normed_res)
+            return normed_res.reshape(n,-1)
 
 
 class HogDescriber_scikit(PersonDescriber):

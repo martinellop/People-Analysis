@@ -3,6 +3,7 @@ import time
 import os
 os.environ["KMP_DUPLICATE_LIB_OK"]='True'
 import sys
+import random
 import cv2
 from torchvision.ops import roi_pool
 from common.PersonDescriber import PersonDescriber
@@ -31,11 +32,12 @@ def Evaluate_On_MOTSynth(model:PersonDescriber, hyperPrms:HyperParams, device:to
     video = LoadImages(video_path,1920)
     framerate = 20
 
-    if max_time > 0:
-        max_time = round(max_time * framerate)
+    max_frame = round(max_time * framerate) if max_time > 0 else -1
 
     db = PeopleDB(hyperPrms.dist_function, hyperPrms.threshold, int(hyperPrms.frame_memory / hyperPrms.frame_stride), device=device)
     data = MOTannotation(annotations_path)
+    ncolors = 255
+    colors = [[random.randint(0, 255) for _ in range(3)] for _ in range(ncolors)]
     current_frame = -1
 
     for path, img, im0s, vid_cap in video:
@@ -67,8 +69,8 @@ def Evaluate_On_MOTSynth(model:PersonDescriber, hyperPrms:HyperParams, device:to
             target_id, new_one = db.Get_ID(descr)
             id_ = torch.Tensor((target_id,)).to(dtype=torch.long, device=device).reshape(1,1)
             target_ids = torch.cat((target_ids, id_))
-            report = f"+ Created {target_id} at frame {current_frame}" if new_one else f"Recognized {target_id} at frame {current_frame}"
-            print(report)
+            #report = f"+ Created {target_id} at frame {current_frame}" if new_one else f"Recognized {target_id} at frame {current_frame}"
+            #print(report)
         t3 = time.time()
         db.Update_Frame()
         t4 = time.time()
@@ -79,7 +81,8 @@ def Evaluate_On_MOTSynth(model:PersonDescriber, hyperPrms:HyperParams, device:to
             background = im0s
 
             for i in range(boxes.shape[0]):
-                plot_one_box(boxes[i,1:5],background,label=str(int(target_ids[i])))
+                id = int(target_ids[i])
+                plot_one_box(boxes[i,1:5],background,label=str(id),color=colors[id%ncolors])
             cv2.imshow("img", background)
             cv2.waitKey(1)  # 1 millisecond
         t5 =time.time()
@@ -91,14 +94,14 @@ def Evaluate_On_MOTSynth(model:PersonDescriber, hyperPrms:HyperParams, device:to
         s = s + f". TOTAL:{round((t5 - t0)*1000)}ms."
         print(s)    
 
-        if(max_time > 0 and current_frame > max_time):
+        if(max_frame > 0 and current_frame >= max_frame-1):
             break
-
+    db.Clear()
 
 if __name__=='__main__':
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     hogPrms = HogHyperParams()
-    hyperprms = HyperParams(threshold=10.0,target_resolution=(128,256))
+    hyperprms = HyperParams(threshold=2.0,target_resolution=(64,128))
     describer = HogDescriber_torch(hogPrms,device)
     #describer = HogDescriber_scikit(hogPrms,device)
-    Evaluate_On_MOTSynth(describer, hyperprms, device, visualize=True, max_time=2.0)
+    Evaluate_On_MOTSynth(describer, hyperprms, device, visualize=True, max_time=5)
