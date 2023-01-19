@@ -6,26 +6,27 @@ import sys
 import random
 import cv2
 from torchvision.ops import roi_pool
-from common.PersonDescriber import PersonDescriber
-from common.MOTutils import MOTannotation,plot_one_box
-from common.PeopleDB import PeopleDB, L2_distance
-from Hog_reID.HogDescriber import HogDescriber_scikit, HogDescriber_torch, HogHyperParams
+from PersonDescriber import PersonDescriber
+from MOTutils import MOTannotation,plot_one_box
+from PeopleDB import PeopleDB, L2_distance, Mahalanobis_distance
+from HogDescriber import HogDescriber_scikit, HogDescriber_torch, HogHyperParams
 
 
 module_folder = os.path.abspath(os.path.join("PeopleDetector", "utils"))
+print(module_folder)
 sys.path.insert(0, module_folder)
 from datasets import LoadImages
 
 
 class HyperParams:
-    def __init__(self, target_resolution=(64,128), frame_stride=1, dist_function=L2_distance, threshold:float=1.0, db_memory:int=20*10):
+    def __init__(self, target_resolution=(128,64), frame_stride=1, dist_function=L2_distance, threshold:float=1.0, db_memory:int=20*10):
         self.target_res = target_resolution
         self.frame_stride = frame_stride
         self.dist_function = dist_function
         self.threshold = threshold
         self.frame_memory = db_memory
 
-def Evaluate_On_MOTSynth(model:PersonDescriber, hyperPrms:HyperParams, device:torch.device, visualize:bool=False, max_time:float=-1):
+def Evaluate_On_MOTSynth(describer:PersonDescriber, hyperPrms:HyperParams, device:torch.device, visualize:bool=False, max_time:float=-1):
     data_folder = os.path.join(".", "inputs", "videos", "512")
     video_path = os.path.join(data_folder, "512.mp4")
     annotations_path = os.path.join(data_folder, "gt", "gt.txt")
@@ -63,10 +64,10 @@ def Evaluate_On_MOTSynth(model:PersonDescriber, hyperPrms:HyperParams, device:to
         t2 = time.time()
         #print("crops after roiPooling:", crops.shape)
         descriptors = describer.Extract_Description(crops)#.to(device) 
-        #print("descriptors:", descriptors.shape)
+        print("descriptors:", descriptors.shape)
         for i in range(descriptors.shape[0]):
             descr = descriptors[i]
-            target_id, new_one = db.Get_ID(descr)
+            target_id, new_one = db.Get_ID(descr,update_factor=0.15)
             id_ = torch.Tensor((target_id,)).to(dtype=torch.long, device=device).reshape(1,1)
             target_ids = torch.cat((target_ids, id_))
             #report = f"+ Created {target_id} at frame {current_frame}" if new_one else f"Recognized {target_id} at frame {current_frame}"
@@ -74,7 +75,6 @@ def Evaluate_On_MOTSynth(model:PersonDescriber, hyperPrms:HyperParams, device:to
         t3 = time.time()
         db.Update_Frame()
         t4 = time.time()
-
         s = f'frame {current_frame} BB mgmt: {round((t1 - t0)*1000)}ms; ROIpooling: {round((t2 - t1)*1000)}ms; Descr gen: {round((t3 - t2)*1000)}ms; frameShift: {round((t4 - t3)*1000)}ms'
 
         if visualize:
@@ -84,7 +84,7 @@ def Evaluate_On_MOTSynth(model:PersonDescriber, hyperPrms:HyperParams, device:to
                 id = int(target_ids[i])
                 plot_one_box(boxes[i,1:5],background,label=str(id),color=colors[id%ncolors])
             cv2.imshow("img", background)
-            cv2.waitKey(1)  # 1 millisecond
+            cv2.waitKey(500)  # 1 millisecond
         t5 =time.time()
 
 
@@ -98,10 +98,23 @@ def Evaluate_On_MOTSynth(model:PersonDescriber, hyperPrms:HyperParams, device:to
             break
     db.Clear()
 
+
+
+def Mahalanobis_dist(x,y):
+    return Mahalanobis_distance(x,y, inverse_covs)
+
+
 if __name__=='__main__':
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     hogPrms = HogHyperParams()
-    hyperprms = HyperParams(threshold=2.0,target_resolution=(64,128))
+
+    l2_dist=True
+
+    if l2_dist:
+        hyperprms = HyperParams(threshold=2.0,target_resolution=(128,64))
+    else:
+        inverse_covs = torch.load(os.path.join("ReID","inv_covariances.bin"))
+        hyperprms = HyperParams(threshold=0.5,target_resolution=(128,64),dist_function=Mahalanobis_dist)
     describer = HogDescriber_torch(hogPrms,device)
     #describer = HogDescriber_scikit(hogPrms,device)
-    Evaluate_On_MOTSynth(describer, hyperprms, device, visualize=True, max_time=5)
+    Evaluate_On_MOTSynth(describer, hyperprms, device, visualize=True, max_time=10)
