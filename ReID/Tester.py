@@ -63,11 +63,11 @@ def Evaluate_On_MOTSynth(describer:PersonDescriber, hyperPrms:HyperParams, devic
         crops = roi_pool(frame_tensor,boxes, hyperPrms.target_res).to(device)
         t2 = time.time()
         #print("crops after roiPooling:", crops.shape)
-        descriptors = describer.Extract_Description(crops)#.to(device) 
+        descriptors = describer.Extract_Description(crops, use_colors=False)#.to(device) 
         print("descriptors:", descriptors.shape)
         for i in range(descriptors.shape[0]):
             descr = descriptors[i]
-            target_id, new_one = db.Get_ID(descr,update_factor=0.15)
+            target_id, new_one = db.Get_ID(descr,update_factor=1.0)
             id_ = torch.Tensor((target_id,)).to(dtype=torch.long, device=device).reshape(1,1)
             target_ids = torch.cat((target_ids, id_))
             #report = f"+ Created {target_id} at frame {current_frame}" if new_one else f"Recognized {target_id} at frame {current_frame}"
@@ -111,10 +111,9 @@ if __name__=='__main__':
     l2_dist=True
 
     if l2_dist:
-        hyperprms = HyperParams(threshold=2.0,target_resolution=(128,64))
+        hyperprms = HyperParams(threshold=1.95,target_resolution=(128,64))
     else:
         inverse_covs = torch.load(os.path.join("ReID","inv_covariances.bin"))
         hyperprms = HyperParams(threshold=0.5,target_resolution=(128,64),dist_function=Mahalanobis_dist)
     describer = HogDescriber_torch(hogPrms,device)
-    #describer = HogDescriber_scikit(hogPrms,device)
     Evaluate_On_MOTSynth(describer, hyperprms, device, visualize=True, max_time=10)

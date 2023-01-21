@@ -56,7 +56,7 @@ class PeopleDB:
         if distances[idx] <= self._dist_threshold_:
             #we got a match
             update_factor = min(max(0,update_factor), 1.0)  #clamping
-            self._vectors_[idx] = (1.0 + update_factor) * self._vectors_[idx] + update_factor * descriptor
+            self._vectors_[idx] = (1.0 - update_factor) * self._vectors_[idx] + update_factor * descriptor
             self._last_update_[idx] = self._current_frame_
             return self._ids_[idx], False
         else:
