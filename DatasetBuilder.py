@@ -8,7 +8,7 @@ import cv2
 import time
 import math
 import threading
-import concurrent.futures
+import logging
 
 module_folder = os.path.abspath(os.path.join("PeopleDetector", "utils"))
 #print(module_folder)
@@ -17,9 +17,9 @@ from datasets import LoadImages
 
 root_dir = "D:\\Data\\University\\MOTSynth"
 
-videos_dir = os.path.join(root_dir,"MOTSynth_2")
+videos_dir = os.path.join(root_dir,"MOTSynth_3")
 annotations_dir = os.path.join(root_dir,"annotations_COCO_style")
-crops_dir = os.path.join(root_dir,"crops_clips_bounded")      #output dir
+crops_dir = os.path.join(root_dir,"crops")      #output dir
 framerate = 20
 video_res=(1920,1080)
 
@@ -29,7 +29,7 @@ extraction_period = 5   # a value 10 means "extract crops form one frame every 1
 avoid_blurred_images = False
 minim_crop_area = 6000      # crops w*h must be at least this value in order to get saved
 minim_person_area = 1500    # minimum amount of pixels in which it is possible to see the target (e.g. behind a wall area is 0)
-isolate_clips = True
+isolate_clips = False
 
 n_workers = 2               # how many threads do you want to work in parallel?
 
@@ -73,11 +73,12 @@ def process_crop(annotation, frame:np.ndarray, image_id:int, clip_name:str):
     return True
 
 
-def process_videos(videos):
+def process_videos(thread_id:int, videos):
     processed = 0
     for v in videos:
         video = LoadImages(os.path.join(videos_dir,v) ,video_res[0], verbose=False)
         short_name = v.replace(".mp4", "")
+
         ann_file = short_name +  ".json"
         annotations = json.load(open(os.path.join(annotations_dir,ann_file)))
         annotations = annotations['annotations']    # we're interested just to where there are object annotations.
@@ -86,11 +87,12 @@ def process_videos(videos):
 
         ann_idx = 0
         #print(annotations[0])
-        print(f"STARTING video: {short_name}.")
+        logging.info(f"Thread_{thread_id}: STARTING video: {short_name}.")
         t1 = time.time()    
         saved_crops = 0
 
         current_frame = -1
+        finished = False
         for path, img, im0s, vid_cap in video:
             current_frame +=1
             image_id += 1
@@ -99,16 +101,25 @@ def process_videos(videos):
             
             while annotations[ann_idx]['image_id'] < image_id:
                 ann_idx+=1
+                if ann_idx == len(annotations):
+                    finished = True
+                    break
+
+            if finished:
+                break    
 
             while annotations[ann_idx]['image_id'] == image_id:
                 if process_crop(annotations[ann_idx], im0s, image_id, short_name):
                     saved_crops +=1
-
                 ann_idx+=1
                 if ann_idx == len(annotations):
+                    finished = True
                     break
+
+            if finished:
+                break
         processed += 1        
-        print(f"DONE video: {short_name}. Saved {saved_crops} crops in {round(time.time() - t1)} seconds. Total: {round(processed * 100 / (len(videos)))}% done.")
+        logging.info(f"Thread_{thread_id}: DONE video: {short_name}. Saved {saved_crops} crops in {round(time.time() - t1)} seconds. Total: {round(processed * 100 / (len(videos)))}% done.")
         
 
 
@@ -116,10 +127,12 @@ def process_videos(videos):
 if __name__=='__main__':
     videos = get_files_from_folder(videos_dir)
     annotations = get_files_from_folder(annotations_dir)
-
+    logging.basicConfig(level=logging.INFO)
+    logging.info(f"clips to be processed: {len(videos)}")
     t0 = time.time()
 
     n_workers = min(n_workers, len(videos))
+    threads = []
 
     task_list = []
     remaining = len(videos)
@@ -131,10 +144,15 @@ if __name__=='__main__':
         task_list.append(v_list)
         starting_idx +=count
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=n_workers) as executor:
-        executor.map(process_videos, task_list)
+    for index in range(n_workers):
+        x = threading.Thread(target=process_videos, args=(index, task_list[index]),daemon=True)
+        threads.append(x)
+        x.start()
+
+    for index, thread in enumerate(threads):
+        thread.join()
 
     #print("TaskList:", task_list)
-
-    print(f"--FINISHED in {round(time.time() - t0)} seconds; processed {len(videos)} videos.")
+    #process_videos(videos)
+    logging.info(f"--FINISHED in {round(time.time() - t0)} seconds; processed {len(videos)} videos.")
 
