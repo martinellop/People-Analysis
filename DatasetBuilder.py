@@ -17,9 +17,9 @@ from datasets import LoadImages
 
 root_dir = "D:\\Data\\University\\MOTSynth"
 
-videos_dir = os.path.join(root_dir,"MOTSynth_3")
+videos_dir = os.path.join(root_dir,"MOTSynth_videos")
 annotations_dir = os.path.join(root_dir,"annotations_COCO_style")
-crops_dir = os.path.join(root_dir,"crops")      #output dir
+crops_dir = os.path.join(root_dir,"crops_2")      #output dir
 framerate = 20
 video_res=(1920,1080)
 
@@ -27,11 +27,13 @@ video_res=(1920,1080)
 # SETTINGS
 extraction_period = 5   # a value 10 means "extract crops form one frame every 10 frames (aka every 0.5 seconds)" 
 avoid_blurred_images = False
+avoid_night_clips = True
 minim_crop_area = 6000      # crops w*h must be at least this value in order to get saved
+minim_dim = 35              # minimal lenght in pixel of each dimension.
 minim_person_area = 1500    # minimum amount of pixels in which it is possible to see the target (e.g. behind a wall area is 0)
 isolate_clips = False
 
-n_workers = 2               # how many threads do you want to work in parallel?
+n_workers = 1               # how many threads do you want to work in parallel?
 
 def get_files_from_folder(path):
     files = os.listdir(path)
@@ -47,22 +49,24 @@ def process_crop(annotation, frame:np.ndarray, image_id:int, clip_name:str):
     bbox = annotation['bbox']
     if bbox[2] * bbox[3] < minim_crop_area:
         return False
+    if bbox[2] < minim_dim or bbox[3] < minim_dim:
+        return False
 
     model_id = annotation['model_id'] #it's a string 
 
     if not isolate_clips:
         attributes = annotation['attributes']
-        name = model_id + '_'
+        name = f"{model_id:03d}_"
         for el in attributes:
             if el > 99:
                 return False # we store each attribute in 2 digits
             name += f'{el:02d}'
         #print(f"mod_id: {model_id}, attributes: {attributes} --> name: {name}")
         path = os.path.join(crops_dir, name)
-        filename = os.path.join(path, f"{image_id}.jpg")
+        filename = os.path.join(path, f"{image_id:07d}.jpg")
     else:
-        path = os.path.join(crops_dir, f"{model_id}_{clip_name}")
-        filename = os.path.join(path, f"{image_id}.jpg")
+        path = os.path.join(crops_dir, f"{model_id:03d}_{clip_name}")
+        filename = os.path.join(path, f"{image_id:07d}.jpg")
 
     if not os.path.isdir(path):
         os.mkdir(path)
@@ -81,6 +85,13 @@ def process_videos(thread_id:int, videos):
 
         ann_file = short_name +  ".json"
         annotations = json.load(open(os.path.join(annotations_dir,ann_file)))
+
+        if avoid_night_clips:
+            if annotations['info']['is_night'] == 1:
+                processed += 1
+                logging.info(f"Thread_{thread_id}: SKIPPED video {short_name} since during night. Total: {round(processed * 100 / (len(videos)))}% done.")
+                continue
+
         annotations = annotations['annotations']    # we're interested just to where there are object annotations.
 
         image_id = int(short_name) * 10000 - 1
@@ -129,6 +140,10 @@ if __name__=='__main__':
     annotations = get_files_from_folder(annotations_dir)
     logging.basicConfig(level=logging.INFO)
     logging.info(f"clips to be processed: {len(videos)}")
+
+    if not os.path.isdir(crops_dir):
+        os.mkdir(crops_dir)
+
     t0 = time.time()
 
     n_workers = min(n_workers, len(videos))

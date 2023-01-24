@@ -6,10 +6,10 @@ import sys
 import random
 import cv2
 from torchvision.ops import roi_pool
-from PersonDescriber import PersonDescriber
-from MOTutils import MOTannotation,plot_one_box
-from PeopleDB import PeopleDB, L2_distance, Mahalanobis_distance
-from HogDescriber import HogDescriber_scikit, HogDescriber_torch, HogHyperParams
+from common.PersonDescriber import PersonDescriber
+from common.MOTutils import MOTannotation,plot_one_box
+from common.PeopleDB import PeopleDB, L2_distance, Mahalanobis_distance
+from HOG.HogDescriber import HogDescriber_scikit, HogDescriber_torch, HogHyperParams
 
 
 module_folder = os.path.abspath(os.path.join("PeopleDetector", "utils"))
