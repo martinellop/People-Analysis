@@ -10,12 +10,6 @@ from model import ReIDModel
 from triplet_loss import TripletLoss
 from tools import save_checkpoint
 
-# FIXME: Problema del Mac, negli altri computer si puo togliere
-#        e' per scaricare i pesi dei modelli
-import ssl
-ssl._create_default_https_context = ssl._create_unverified_context
-
-
 def parse_options():
     parser = argparse.ArgumentParser()
 
@@ -25,7 +19,7 @@ def parse_options():
     parser.add_argument('--gallery_path', type=str)
 
     # Model structure
-    parser.add_argument('--model', type=str, default="resnet")  # resnet/alexnet
+    parser.add_argument('--model', type=str, default="resnet18")  # choose your model here
     parser.add_argument('--height', type=int, default=224)
     parser.add_argument('--width', type=int, default=224)
     parser.add_argument('--num_classes', type=int)  # num di persone nel dataset di train
@@ -47,10 +41,14 @@ def parse_options():
 
 def main(args):
 
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    if torch.cuda.is_available():
+        print("You are running on", torch.cuda.get_device_name(), "gpu.")
+
     trainloader, queryloader, galleryloader = get_dataloader(args)
     model = ReIDModel(args)
-    triplet_loss = TripletLoss()  # TODO: settare magari meglio un margine
-    ce_loss = nn.CrossEntropyLoss()
+    triplet_loss = TripletLoss().to(device=device)  # TODO: settare magari meglio un margine
+    ce_loss = nn.CrossEntropyLoss().to(device=device)
 
     # TODO: settare meglio il lr
     optimizer = optim.Adam(model.parameters(), lr=0.001)
@@ -66,17 +64,17 @@ def main(args):
         start_epoch = checkpoint['epoch']
         print("Restarting from Epoch", start_epoch)
 
-    model = nn.DataParallel(model)#.cuda() FIXME: riattivare
+    model = nn.DataParallel(model).to(device=device)
 
     print("Start Train")
     for epoch in range(start_epoch, args.max_epoch):
         print("Epoch", epoch)
-        train(epoch, model, triplet_loss, ce_loss, optimizer, trainloader)
+        train(epoch, model, triplet_loss, ce_loss, optimizer, trainloader, device)
 
         if epoch % args.test_interval == 0 or epoch+1 == args.max_epoch:
             # Valuta il trainset
             print("Start test")
-            rank1 = test(model, queryloader, galleryloader)
+            rank1 = test(model, queryloader, galleryloader, device)
             print("Test Finished. Rank1 accuracy: ", rank1)
 
             # TODO: magari salvare tutti i valori per poi farci un grafico
@@ -84,20 +82,21 @@ def main(args):
 
             # Dopo averlo testato, salvo il modello con un checkpoint
             state_dict = model.module.state_dict()
-            savepath = os.path.join(args.savefolder, "checkpoint_ep"+str(epoch)+".pth.tar")
+            #savepath = os.path.join(args.savefolder, "checkpoint_ep"+str(epoch)+".pth.tar")
+            savepath = os.path.join(args.savefolder, "last_checkpoint.pth.tar")
             save_checkpoint({"state_dict": state_dict, "epoch": epoch}, savepath)
 
         scheduler.step()
 
 
-def train(epoch_idx, model, triplet_loss, overall_loss, optimizer, trainloader):
+def train(epoch_idx, model, triplet_loss, overall_loss, optimizer, trainloader, device):
     # Allena un epoca del modello
 
     model.train()
     len_trainloader = len(trainloader)
 
     for batch_idx, (imgs, pids) in enumerate(trainloader):
-        #imgs, pids = imgs.cuda(), pids.cuda() FIXME: riattivare
+        imgs, pids = imgs.to(device=device), pids.to(device=device)
         optimizer.zero_grad()
         # Faccio la forward
         feature_vector, outputs = model(imgs)
@@ -121,13 +120,15 @@ def train(epoch_idx, model, triplet_loss, overall_loss, optimizer, trainloader):
             return
 
 
-def test(model, queryloader, galleryloader):
+def test(model, queryloader, galleryloader, device):
     # Usa il dataset Query e Gallery per fare una prova di image retrieval e vedere le performance
     model.eval()
     print("Test: Extract Query")
-    qf, q_pids = extract_feature(model, queryloader)
+    qf, q_pids = extract_feature(model, queryloader, device)
+    #qf, q_pids = qf.to(device=device), q_pids.to(device=device)
     print("Test: Extract Gallery")
-    gf, g_pids = extract_feature(model, galleryloader)
+    gf, g_pids = extract_feature(model, galleryloader, device)
+    #gf, g_pids = gf.to(device=device), g_pids.to(device=device)
 
     # Calcolo la matrice di distanza tra ogni elemento della query e la galleria
     m, n = qf.size(0), gf.size(0)
@@ -161,9 +162,9 @@ def test(model, queryloader, galleryloader):
 
 
 @torch.no_grad()
-def extract_feature(model, dataloader):
+def extract_feature(model:nn.Module, dataloader, device):
     # data una immagine estra le feature escludendo la parte di classificazione
-    features, pids = [], []
+    pids = []
     for batch_idx, (imgs, batch_pids) in enumerate(dataloader):
         # TODO: c'e' questo codice per flippare l'immagine e calcolare il fv anche su quello e poi sommarlo
         #          non so se abbia troppo senso, nel dubbio lo lascio commentato
@@ -174,13 +175,15 @@ def extract_feature(model, dataloader):
         batch_features += batch_features_flip
         '''
 
-        # imgs = imgs.cuda() FIXME: riattivare
-
-        batch_features = model(imgs, True).data.cpu()  # metto il True cosi da far restituire solo il feature_vector
-        features.append(batch_features)
+        imgs = imgs.to(device=device)
+        batch_features = model(imgs, True).data  # metto il True cosi da far restituire solo il feature_vector
+        if batch_idx == 0:
+            features = batch_features
+        else:
+            features = torch.cat((features, batch_features),0)
+        
         pids += batch_pids
-
-    features = torch.cat(features, 0)  # "estraggo" da ciascun batch e unisco in un'unico tensore
+        
     return features, pids
 
 

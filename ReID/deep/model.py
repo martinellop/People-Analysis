@@ -7,13 +7,17 @@ class ReIDModel(nn.Module):
     def __init__(self, args):
         super(ReIDModel, self).__init__()
 
-        if args.model == "resnet":
-            resnet50 = models.resnet50(weights=models.ResNet50_Weights.DEFAULT)
-            self.base = nn.Sequential(*list(resnet50.children())[:-2])
+        if args.model == "resnet50":
+            model = models.resnet50(weights=models.ResNet50_Weights.DEFAULT)
+            self.base = nn.Sequential(*list(model.children())[:-2])
             outputn = 2048
+        elif args.model == "resnet18":
+            model = models.resnet18(weights=models.ResNet18_Weights.DEFAULT)
+            self.base = nn.Sequential(*list(model.children())[:-2])
+            outputn = 512
         elif args.model == "alexnet":
-            alexnet = models.alexnet(weights=models.AlexNet_Weights.DEFAULT)
-            self.base = nn.Sequential(*list(alexnet.children())[:-2])
+            model = models.alexnet(weights=models.AlexNet_Weights.DEFAULT)
+            self.base = nn.Sequential(*list(model.children())[:-2])
             outputn = 256
         else:
             raise Exception("Please specify the model")
