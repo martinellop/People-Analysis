@@ -1,39 +1,5 @@
 import torch
 
-def L1_distance(x:torch.Tensor, y: torch.Tensor):
-    """x must be shaped [k,d] or [d], y must be [1,d] or [d]."""
-    return torch.sum(torch.abs(x-y), -1)
-
-def L2_distance(x:torch.Tensor, y: torch.Tensor):
-    """x must be shaped [k,d] or [d], y must be [1,d] or [d]."""
-    return torch.sqrt(torch.sum(torch.pow(x-y,2), -1))
-
-def Mahalanobis_distance(x:torch.Tensor, y:torch.Tensor, C:torch.Tensor):
-    """
-    x must be shaped [k,d] or [d], y must be [1,d] or [d].
-    C is the inverse of the Covariance Matrix (d x d)
-    """
-    if x.dim() == 1:
-        x = x.unsqueeze(0)
-    if y.dim() == 1:
-        y = y.unsqueeze(0)
-    diff = (x - y).to(dtype=torch.float)                            #(n x d)
-    mat1 = torch.matmul(diff, C)                                    #(n x d)
-    dist = torch.matmul(mat1,torch.transpose(diff,0,1))             #(n x n)
-    dist = dist.diag()                                              #(n x 1)
-    return torch.sqrt(dist)
-
-# cosine distance?
-def Cosine_distance(x: torch.Tensor, y:torch.Tensor):
-    """x must be shaped [k,d] or [d], y must be [1,d] or [d]."""
-    if x.dim() == 1:
-        x = x.unsqueeze(0)
-    if y.dim() == 1:
-        y = y.unsqueeze(0)
-    den = x.norm(dim=1) * y.norm(dim=1)
-    similarities = torch.matmul(x,y.transpose(0,1)) / den
-    return 1 - similarities
-
 class PeopleDB:
     def __init__(self, dist_function, dist_threshold:float, frame_memory:int, device:torch.device=None):
         self._dist_function_ = dist_function

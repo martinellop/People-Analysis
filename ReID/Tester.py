@@ -8,7 +8,8 @@ import cv2
 from torchvision.ops import roi_pool
 from common.PersonDescriber import PersonDescriber
 from common.MOTutils import MOTannotation,plot_one_box
-from common.PeopleDB import PeopleDB, L2_distance, Mahalanobis_distance
+from common.PeopleDB import PeopleDB
+from common.distances import L2_distance, Mahalanobis_distance
 from HOG.HogDescriber import HogDescriber_scikit, HogDescriber_torch, HogHyperParams
 
 

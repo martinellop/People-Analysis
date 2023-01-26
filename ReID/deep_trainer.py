@@ -4,11 +4,30 @@ import torch.optim as optim
 
 import argparse
 import os
+from matplotlib import pyplot as plt
 
-from dataset import get_dataloader
-from model import ReIDModel
-from triplet_loss import TripletLoss
-from tools import save_checkpoint
+from deep.dataset import get_dataloader
+from deep.model import ReIDModel
+from deep.triplet_loss import TripletLoss
+from deep.tools import save_checkpoint
+
+from common.distances import L2_distance
+
+
+"""
+References:
+[1]:
+    H. Luo et al., "A Strong Baseline and Batch Normalization Neck for Deep Person Re-Identification,"
+    in IEEE Transactions on Multimedia, vol. 22, no. 10, pp. 2597-2609,
+    Oct. 2020, doi: 10.1109/TMM.2019.2958756.
+
+[2]:
+    Z. Zhong, L. Zheng, D. Cao and S. Li, "Re-ranking Person Re-identification with k-Reciprocal Encoding,"
+    2017 IEEE Conference on Computer Vision and Pattern Recognition (CVPR), Honolulu, HI, USA,
+    2017, pp. 3652-3661, doi: 10.1109/CVPR.2017.389.    
+"""
+
+
 
 def parse_options():
     parser = argparse.ArgumentParser()
@@ -19,21 +38,23 @@ def parse_options():
     parser.add_argument('--gallery_path', type=str)
 
     # Model structure
-    parser.add_argument('--model', type=str, default="resnet18")  # choose your model here
+    parser.add_argument('--model', type=str, default="resnet18")    # choose your model here
     parser.add_argument('--height', type=int, default=224)
     parser.add_argument('--width', type=int, default=224)
-    parser.add_argument('--num_classes', type=int)  # num di persone nel dataset di train
+    parser.add_argument('--use_bbneck', type=int, default=1)        # logically it's just a bool
+    parser.add_argument('--num_classes', type=int)                  # maximum number of identities to be classified
 
     # Model training
     parser.add_argument('--batch_size', type=int, default=16)
     parser.add_argument('--workers', type=int, default=4)
     parser.add_argument('--max_epoch', type=int)
-    parser.add_argument('--test_interval', type=int, default=1)  # ogni quante epoche fare il test
+    parser.add_argument('--test_interval', type=int, default=1)     # how many epochs to be process before a test?
+    parser.add_argument('--triplet_margin', type=float, default=0.3)# the margin used by the triplet loss function. default value taken from [1]
 
     # Resume
-    parser.add_argument('--resume', type=int, default=0)  # e' un bool ma lo scrivo come int
+    parser.add_argument('--resume', type=int, default=0)            # logically it's just a bool
     parser.add_argument('--checkpoint', type=str)
-    parser.add_argument('--savefolder', type=str, default=".")
+    parser.add_argument('--savefolder', type=str, default=os.path.join("deep","checkpoints"))
 
     args, _ = parser.parse_known_args()
     return args
@@ -47,14 +68,13 @@ def main(args):
 
     trainloader, queryloader, galleryloader = get_dataloader(args)
     model = ReIDModel(args)
-    triplet_loss = TripletLoss().to(device=device)  # TODO: settare magari meglio un margine
-    ce_loss = nn.CrossEntropyLoss().to(device=device)
+    
+    triplet_loss = TripletLoss(args.triplet_margin).to(device=device)
+    id_loss = nn.CrossEntropyLoss().to(device=device)
 
-    # TODO: settare meglio il lr
-    optimizer = optim.Adam(model.parameters(), lr=0.001)
-    # lo scheduler ogni 30 epoche moltiplica il lr di 0.1
-    # TODO: modificare valori
-    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=30, gamma=0.1)
+    # Variable  learning rate:
+    optimizer = optim.Adam(model.parameters(), lr=0.0035)                       # starting value chose accordingly to [1]
+    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=30, gamma=0.1)   # every 30 epochs, lr is multiplied by 0.1
 
     start_epoch = 0
     if bool(args.resume):
@@ -66,10 +86,14 @@ def main(args):
 
     model = nn.DataParallel(model).to(device=device)
 
+    # here will be appended loss values after every epoch (triplet_loss, id_loss, total_loss)
+    # --> it will be also saved from checkpoints
+    model.loss_history = torch.zeros(size=(3,0), device=device, dtype=torch.float)   
+
     print("Start Train")
     for epoch in range(start_epoch, args.max_epoch):
         print("Epoch", epoch)
-        train(epoch, model, triplet_loss, ce_loss, optimizer, trainloader, device)
+        train(epoch, model, triplet_loss, id_loss, optimizer, trainloader, device)
 
         if epoch % args.test_interval == 0 or epoch+1 == args.max_epoch:
             # Valuta il trainset
@@ -77,35 +101,40 @@ def main(args):
             rank1 = test(model, queryloader, galleryloader, device)
             print("Test Finished. Rank1 accuracy: ", rank1)
 
-            # TODO: magari salvare tutti i valori per poi farci un grafico
-            #       se no ci guardiamo noi quando inizia a scendere
-
-            # Dopo averlo testato, salvo il modello con un checkpoint
+            # Let's also have a checkpoint, saving model status
             state_dict = model.module.state_dict()
             #savepath = os.path.join(args.savefolder, "checkpoint_ep"+str(epoch)+".pth.tar")
             savepath = os.path.join(args.savefolder, "last_checkpoint.pth.tar")
             save_checkpoint({"state_dict": state_dict, "epoch": epoch}, savepath)
 
         scheduler.step()
+    
+    #let's save to file loss history
+    torch.save(model.loss_history.detach().cpu() ,os.path.join("deep","results", "losses.pth"))
 
 
-def train(epoch_idx, model, triplet_loss, overall_loss, optimizer, trainloader, device):
-    # Allena un epoca del modello
+def train(epoch_idx, model, triplet_loss_function, id_loss_function, optimizer, trainloader, device):
+    # Train one epoch
 
     model.train()
     len_trainloader = len(trainloader)
-
+    epoch_triplet_loss = 0
+    epoch_id_loss = 0
+    epoch_total_loss = 0
     for batch_idx, (imgs, pids) in enumerate(trainloader):
         imgs, pids = imgs.to(device=device), pids.to(device=device)
+
         optimizer.zero_grad()
-        # Faccio la forward
-        feature_vector, outputs = model(imgs)
-        # Calcolo le loss
-        tr_loss = triplet_loss(feature_vector, pids)
-        ce_loss = overall_loss(outputs, pids)
-        # TODO: Inserire un termine di discount tra le due loss?
-        loss = tr_loss + ce_loss
-        # Aggiornamento valori
+        feature_vector, outputs = model(imgs)                   # forward
+        tr_loss = triplet_loss_function(feature_vector, pids)   # loss calculation
+        id_loss = id_loss_function(outputs, pids)
+        loss = tr_loss + id_loss                                # maybe we could add a discount value between loss values
+
+        epoch_triplet_loss += tr_loss.item()
+        epoch_id_loss += id_loss.item()
+        epoch_total_loss += loss.item()
+
+        print(f"tr_loss:{tr_loss.item()}; ce_loss: {id_loss.item()}; total:{loss.item()}")
         loss.backward()
         optimizer.step()
 
@@ -114,39 +143,36 @@ def train(epoch_idx, model, triplet_loss, overall_loss, optimizer, trainloader, 
         correct = torch.sum(pred_class == pids)
 
         print(f"Epoch: {epoch_idx} Batch: {batch_idx}/{len_trainloader}, Correct: {correct}")
-
-        # FIXME: rimuovere, solo per test
-        if batch_idx == 20:
-            return
+    losses = torch.Tensor((epoch_triplet_loss, epoch_id_loss, epoch_total_loss)).to(device=device) / len_trainloader
+    model.loss_history = torch.cat((model.loss_history, losses.unsqueeze(1)),dim=1)
 
 
 def test(model, queryloader, galleryloader, device):
-    # Usa il dataset Query e Gallery per fare una prova di image retrieval e vedere le performance
+    """
+    Using given query and gallery datasets, let's try to perform a retrieval, looking for performance.
+
+    Metrics:
+        * CMC rank-n
+        * mAP
+    """
     model.eval()
-    print("Test: Extract Query")
+    #print("Test: Extract Query")
     qf, q_pids = extract_feature(model, queryloader, device)
-    #qf, q_pids = qf.to(device=device), q_pids.to(device=device)
-    print("Test: Extract Gallery")
+    #print("Test: Extract Gallery")
     gf, g_pids = extract_feature(model, galleryloader, device)
-    #gf, g_pids = gf.to(device=device), g_pids.to(device=device)
 
-    # Calcolo la matrice di distanza tra ogni elemento della query e la galleria
+
+    # Let's calculate distance matrix between queries and gallery items
+
     m, n = qf.size(0), gf.size(0)
-    # TODO: utilizzo di default la distanza euclidea, vedi se ci sono distanze migliori (tipo coseno)
-    distmat = torch.pow(qf, 2).sum(dim=1, keepdim=True).expand(m, n) + \
-              torch.pow(gf, 2).sum(dim=1, keepdim=True).expand(n, m).t()
-    for i in range(m):
-        # non ho capito bene come funziona ma moltiplica tra di loro le matrici dei parametri
-        # e poi la somma con la matrice che l'ha chiamata
-        # FIXME: mi dice che è deprecata, magari vedere come risolvere
-        distmat[i:i + 1].addmm_(1, -2, qf[i:i + 1], gf.t())
-    print("Test: Distance Matrix computed")
+    
+    distances = L2_distance(qf,gf)
 
-    # TODO: trovare la metrica migliore da usare per calcolare il test
-    # in altri usavano la mAP e CMC (che non so cosa sia)
+
+    # TODO: calculate metrics.
 
     # come esempio calcolo la rank1 accuracy
-    index = torch.argsort(distmat, dim=1)
+    index = torch.argsort(distances, dim=1)
     # in questa matrice la prima dim è il numero di query,
     # e per ciascuna si ha l'elenco ordinato delle immagini della gallery piu vicine
 
@@ -176,7 +202,7 @@ def extract_feature(model:nn.Module, dataloader, device):
         '''
 
         imgs = imgs.to(device=device)
-        batch_features = model(imgs, True).data  # metto il True cosi da far restituire solo il feature_vector
+        batch_features = model(imgs).data
         if batch_idx == 0:
             features = batch_features
         else:
@@ -190,3 +216,13 @@ def extract_feature(model:nn.Module, dataloader, device):
 if __name__ == '__main__':
     config = parse_options()
     main(config)
+
+
+"""
+Possible improvements:
+    + warmup Learning Rate --> [1]
+    + modify network last stage from stride 2 to stride 1  (Last stride)--> [1]
+    + add Center Loss to current loss function --> [1]
+
+    + evaluation between euclidean and cosine distances in triplet loss calculation. Accordingly to [1], euclidean should be better tho.
+"""

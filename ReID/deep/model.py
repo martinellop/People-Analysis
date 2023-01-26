@@ -2,6 +2,33 @@ from torch import nn
 from torchvision import models
 from torch.nn import functional as F
 
+def weights_init_kaiming(m):
+    """
+    Code from https://github.com/michuanhaohao/reid-strong-baseline/blob/master/modeling/baseline.py
+    """
+    classname = m.__class__.__name__
+    if classname.find('Linear') != -1:
+        nn.init.kaiming_normal_(m.weight, a=0, mode='fan_out')
+        nn.init.constant_(m.bias, 0.0)
+    elif classname.find('Conv') != -1:
+        nn.init.kaiming_normal_(m.weight, a=0, mode='fan_in')
+        if m.bias is not None:
+            nn.init.constant_(m.bias, 0.0)
+    elif classname.find('BatchNorm') != -1:
+        if m.affine:
+            nn.init.constant_(m.weight, 1.0)
+            nn.init.constant_(m.bias, 0.0)
+
+
+def weights_init_classifier(m):
+    """
+    Code from https://github.com/michuanhaohao/reid-strong-baseline/blob/master/modeling/baseline.py
+    """
+    classname = m.__class__.__name__
+    if classname.find('Linear') != -1:
+        nn.init.normal_(m.weight, std=0.001)
+        if m.bias:
+            nn.init.constant_(m.bias, 0.0)
 
 class ReIDModel(nn.Module):
     def __init__(self, args):
@@ -9,33 +36,39 @@ class ReIDModel(nn.Module):
 
         if args.model == "resnet50":
             model = models.resnet50(weights=models.ResNet50_Weights.DEFAULT)
-            self.base = nn.Sequential(*list(model.children())[:-2])
-            outputn = 2048
+            self.base = nn.Sequential(*list(model.children())[:-2]) # avg-pool layer is still included (not removed)
+            output_n = 2048
         elif args.model == "resnet18":
             model = models.resnet18(weights=models.ResNet18_Weights.DEFAULT)
-            self.base = nn.Sequential(*list(model.children())[:-2])
-            outputn = 512
-        elif args.model == "alexnet":
-            model = models.alexnet(weights=models.AlexNet_Weights.DEFAULT)
-            self.base = nn.Sequential(*list(model.children())[:-2])
-            outputn = 256
+            self.base = nn.Sequential(*list(model.children())[:-2]) # avg-pool layer is still included (not removed)
+            output_n = 512
         else:
             raise Exception("Please specify the model")
+   
+        #using bbneck idea, expressed in "A Strong Baseline and Batch Normalization Neck for Deep Person Re-identification. IEEE Transactions on Multimedia"
+        self.use_bbneck = args.use_bbneck 
 
-        self.bn = nn.BatchNorm1d(outputn)
-        self.classifier = nn.Linear(outputn, args.num_classes)
+        if not self.use_bbneck:
+            self.classifier = nn.Linear(output_n, args.num_classes)
+        else:
+            self.bottleneck = nn.BatchNorm1d(output_n)
+            self.bottleneck.bias.requires_grad_(False)  # no shift
+            self.classifier = nn.Linear(output_n, args.num_classes, bias=False)
+            self.bottleneck.apply(weights_init_kaiming)
+            self.classifier.apply(weights_init_classifier)
 
-    def forward(self, x, feature_extraction=False):
-        x = self.base(x)  # restituisce un 2048x7x7
-        x = F.avg_pool2d(x, x.size()[2:])  # faccio una avgPool sul 7x7
-        x = x.view(x.size(0), -1)  # e poi creo un unico feat_vector di 2048
-        fv = self.bn(x)  # e normalizzo
-        # feature vector
+    def forward(self, x):
+        x = self.base(x)                        # (b, output_n, 7, 7)
+        x = F.avg_pool2d(x, x.size()[2:])       # (b, output, 1, 1)
+        global_feat = x.view(x.size(0), -1)     # flatten to (b, output_n)
 
-        if feature_extraction:
-            return fv
+        if self.use_bbneck:
+            feat = self.bottleneck(global_feat)
+        else:
+            feat = global_feat
 
-        c = self.classifier(fv)
-        # predicted class
-
-        return fv, c
+        if self.training:
+            cls_score = self.classifier(feat)
+            return cls_score, global_feat       # global feature for triplet loss
+        else:
+            return feat                         # if we are in inference we just want the (final) feature vector.
