@@ -12,6 +12,7 @@ from deep.triplet_loss import TripletLoss
 from deep.tools import save_checkpoint
 
 from common.distances import L2_distance
+from common.evaluation_metrics import calculate_CMC
 
 
 """
@@ -146,6 +147,10 @@ def train(epoch_idx, model, triplet_loss_function, id_loss_function, optimizer, 
         if verbose:
             print(f"Epoch: {epoch_idx} Batch: {batch_idx}/{len_trainloader}, Loss: {loss.item():.4f} ({tr_loss.item():.4f} + {id_loss.item():.4f})")
 
+        #tmp
+        if batch_idx == 19:
+            break
+
     losses = torch.Tensor((epoch_triplet_loss, epoch_id_loss, epoch_total_loss)).to(device=device) / len_trainloader
     model.loss_history = torch.cat((model.loss_history, losses.unsqueeze(1)),dim=1)
 
@@ -171,23 +176,9 @@ def test(model, queryloader, galleryloader, device):
     
     distances = L2_distance(qf,gf)
 
+    cmc = calculate_CMC(distances, q_pids, g_pids, 1)   #cmc rank-1
 
-    # TODO: calculate metrics.
-
-    # come esempio calcolo la rank1 accuracy
-    index = torch.argsort(distances, dim=1)
-    # in questa matrice la prima dim è il numero di query,
-    # e per ciascuna si ha l'elenco ordinato delle immagini della gallery piu vicine
-
-    correct = 0
-    for i in range(m):
-        # Per ogni immagine della query, guardo l'immagine piu vicina e confronto se la persona è uguale
-        first_img_index = index[i][0]
-        if q_pids[i] == g_pids[first_img_index]:
-            correct += 1
-
-    rank1 = correct/m
-    return rank1
+    return cmc
 
 
 @torch.no_grad()
@@ -206,13 +197,16 @@ def extract_feature(model:nn.Module, dataloader, device):
 
         imgs = imgs.to(device=device)
         batch_features = model(imgs).data
+
+        batch_pids = torch.Tensor(batch_pids).to(device=device, dtype=torch.int)
+
         if batch_idx == 0:
             features = batch_features
+            pids = batch_pids
         else:
             features = torch.cat((features, batch_features),0)
-        
-        pids += batch_pids
-        
+            pids = torch.cat((pids, batch_pids.flatten()), 0)
+                
     return features, pids
 
 

@@ -29,10 +29,10 @@ def get_dataloader(args):
     train_dl = DataLoader(PeopleDataset(args.train_path, transform), shuffle=True,
                           batch_size=args.batch_size, num_workers=args.workers,
                           pin_memory=True)
-    query_dl = DataLoader(PeopleDataset(args.query_path, transform, use_name=True), shuffle=True,
+    query_dl = DataLoader(PeopleDataset(args.query_path, transform), shuffle=True,
                           batch_size=args.batch_size, num_workers=args.workers,
                           pin_memory=True)
-    gallery_dl = DataLoader(PeopleDataset(args.gallery_path, transform, use_name=True), shuffle=True,
+    gallery_dl = DataLoader(PeopleDataset(args.gallery_path, transform), shuffle=True,
                             batch_size=args.batch_size, num_workers=args.workers,
                             pin_memory=True)
 
@@ -40,12 +40,9 @@ def get_dataloader(args):
 
 
 class PeopleDataset(Dataset):
-    def __init__(self, path, transform=None, use_name=False):
-        # use_name indica se utilizzare il nome della cartella come id,
-        # oppure usare l'id numerico generato dal programma, di default usata quello numerico
+    def __init__(self, path, transform=None):
         self.basepath = path
         self.transform = transform
-        self.use_name = use_name
 
         self.dataset = self._create_dataset()
 
@@ -56,17 +53,26 @@ class PeopleDataset(Dataset):
         if len(people_list) == 0:
             raise IOError("The dataset folder is empty")
 
-        people_dirs = filter(os.path.isdir, [os.path.join(self.basepath, i) for i in people_list])
+        clean_people_list = [item for item in people_list if os.path.isdir(os.path.join(self.basepath, item))]
+        # In our dataset there are a lot of folders, one for each identity.
+        # Every folder starts with an unique integer number, followd by a _ and other characters.
+        # We will use that (first) integer as unique ID for each identity.
+        ids = {idx:int(item.split('_')[0]) for (idx, item) in enumerate(clean_people_list)}
+        
+        people_dirs = [os.path.join(self.basepath, i) for i in clean_people_list]
 
         dataset = []
-        for (num, persondir) in enumerate(people_dirs):
+        for (idx, persondir) in enumerate(people_dirs):
+            if not os.path.isdir(persondir):
+                continue
+            id = ids[idx]
             imglist = os.listdir(persondir)
             imglist = filter(lambda i: i.endswith('.jpg'), imglist)
             person_name = os.path.basename(persondir)
 
             for imgname in imglist:
                 imgpath = os.path.join(persondir, imgname)
-                dataset.append((imgpath, num, person_name))
+                dataset.append((imgpath, id))
 
         return dataset
 
@@ -74,13 +80,9 @@ class PeopleDataset(Dataset):
         return len(self.dataset)
 
     def __getitem__(self, index):
-        img_path, pid, pname = self.dataset[index]
+        img_path, pid = self.dataset[index]
         img = read_image(img_path)
         if self.transform is not None:
             img = self.transform(img)
-
-        if self.use_name:
-            return img, pname
-        else:
-            return img, pid
+        return img, pid
 
