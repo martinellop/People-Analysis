@@ -113,36 +113,39 @@ def main(args):
     torch.save(model.loss_history.detach().cpu() ,os.path.join("deep","results", "losses.pth"))
 
 
-def train(epoch_idx, model, triplet_loss_function, id_loss_function, optimizer, trainloader, device):
+def train(epoch_idx, model, triplet_loss_function, id_loss_function, optimizer, trainloader, device, verbose:bool=True):
+    
     # Train one epoch
-
     model.train()
     len_trainloader = len(trainloader)
     epoch_triplet_loss = 0
     epoch_id_loss = 0
     epoch_total_loss = 0
+
     for batch_idx, (imgs, pids) in enumerate(trainloader):
         imgs, pids = imgs.to(device=device), pids.to(device=device)
 
         optimizer.zero_grad()
-        feature_vector, outputs = model(imgs)                   # forward
-        tr_loss = triplet_loss_function(feature_vector, pids)   # loss calculation
-        id_loss = id_loss_function(outputs, pids)
+        features_vector, class_results  = model(imgs)
+
+        # loss calculation
+        tr_loss = triplet_loss_function(features_vector, pids)
+        id_loss = id_loss_function(class_results, pids)
+        # loss merge 
         loss = tr_loss + id_loss                                # maybe we could add a discount value between loss values
 
+        # saving loss data for final stats
         epoch_triplet_loss += tr_loss.item()
         epoch_id_loss += id_loss.item()
         epoch_total_loss += loss.item()
 
-        print(f"tr_loss:{tr_loss.item()}; ce_loss: {id_loss.item()}; total:{loss.item()}")
+        # update model
         loss.backward()
         optimizer.step()
 
-        # Calcolo per vedere quelli corretti
-        pred_class = torch.argmax(outputs, dim=1)
-        correct = torch.sum(pred_class == pids)
+        if verbose:
+            print(f"Epoch: {epoch_idx} Batch: {batch_idx}/{len_trainloader}, Loss: {loss.item():.4f} ({tr_loss.item():.4f} + {id_loss.item():.4f})")
 
-        print(f"Epoch: {epoch_idx} Batch: {batch_idx}/{len_trainloader}, Correct: {correct}")
     losses = torch.Tensor((epoch_triplet_loss, epoch_id_loss, epoch_total_loss)).to(device=device) / len_trainloader
     model.loss_history = torch.cat((model.loss_history, losses.unsqueeze(1)),dim=1)
 
@@ -220,7 +223,6 @@ if __name__ == '__main__':
 
 """
 Possible improvements:
-    + warmup Learning Rate --> [1]
     + modify network last stage from stride 2 to stride 1  (Last stride)--> [1]
     + add Center Loss to current loss function --> [1]
 

@@ -45,7 +45,7 @@ class ReIDModel(nn.Module):
         else:
             raise Exception("Please specify the model")
    
-        #using bbneck idea, expressed in "A Strong Baseline and Batch Normalization Neck for Deep Person Re-identification. IEEE Transactions on Multimedia"
+        #using bbneck idea, expressed in [1]
         self.use_bbneck = args.use_bbneck 
 
         if not self.use_bbneck:
@@ -58,8 +58,13 @@ class ReIDModel(nn.Module):
             self.classifier.apply(weights_init_classifier)
 
     def forward(self, x):
+        """
+        Returns:
+            (features_vector, class_scores):    during training
+            (features_vector):                  during inference
+        """
         x = self.base(x)                        # (b, output_n, 7, 7)
-        x = F.avg_pool2d(x, x.size()[2:])       # (b, output, 1, 1)
+        x = F.avg_pool2d(x, x.size()[2:])       # (b, output_n, 1, 1)
         global_feat = x.view(x.size(0), -1)     # flatten to (b, output_n)
 
         if self.use_bbneck:
@@ -69,6 +74,6 @@ class ReIDModel(nn.Module):
 
         if self.training:
             cls_score = self.classifier(feat)
-            return cls_score, global_feat       # global feature for triplet loss
+            return global_feat, cls_score        # global features for triplet loss
         else:
             return feat                         # if we are in inference we just want the (final) feature vector.
