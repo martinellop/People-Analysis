@@ -10,7 +10,7 @@ import json
 from deep.dataset import get_dataloader
 from deep.model import ReIDModel
 from deep.triplet_loss import TripletLoss
-from deep.tools import save_checkpoint
+from deep.tools import save_checkpoint, ResultsDict
 
 from common.distances import L2_distance
 from common.evaluation_metrics import calculate_CMC, calculate_mAP, calculate_mINP
@@ -67,6 +67,8 @@ def parse_options():
     return args
 
 
+
+
 def main(args):
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -83,42 +85,40 @@ def main(args):
     optimizer = optim.Adam(model.parameters(), lr=0.0035)                       # starting value chose accordingly to [1]
     scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=30, gamma=0.1)   # every 30 epochs, lr is multiplied by 0.1
 
+    # here will be appended loss and metrics values after every epoch
+    # --> it will be also saved from checkpoints
+    results_history = ResultsDict()   
+
     start_epoch = 0
     if bool(args.resume):
         print(f"Loading checkpoint from {args.checkpoint}")
         checkpoint = torch.load(args.checkpoint)
         model.load_state_dict(checkpoint['state_dict'])
-        start_epoch = checkpoint['epoch']
+        start_epoch = checkpoint['epoch'] + 1
+        results_history = checkpoint["results_history"]
         print("Restarting from Epoch", start_epoch)
 
     model = nn.DataParallel(model).to(device=device)
 
-    # here will be appended loss values after every epoch (triplet_loss, id_loss, total_loss)
-    # --> it will be also saved from checkpoints
-    model.loss_history = torch.zeros(size=(3,0), device=device, dtype=torch.float)
-
-    # here will be appended metrics values after every epoch (which one is defined by the test() function)
-    # --> it will be also saved from checkpoints
-    model.test_metrics_history = {}   
 
     print_metrics_while_training = False  #set to false to improve perfomance.
 
     print("Start Train")
     for epoch in range(start_epoch, args.max_epoch):
         print("Epoch", epoch)
-        train(epoch, model, triplet_loss, id_loss, optimizer, trainloader, device)
+        train(epoch, model, triplet_loss, id_loss, optimizer, trainloader, device, results_history, verbose=False)
 
         if epoch % args.test_interval == 0 or epoch+1 == args.max_epoch:
             # Valuta il trainset
             print("Start test")
-            test(model, queryloader, galleryloader, device, first_test=(epoch==0))
+            test(model, queryloader, galleryloader, device, results_history)
 
             test_finished_string = "Test Finished. "
 
             if print_metrics_while_training:
-                for k in model.test_metrics_history.keys():
+                for k in results_history.keys():
                     test_finished_string += k
-                    value = model.test_metrics_history[k][-1]
+                    value = results_history[k][-1]
                     test_finished_string += f": {value:.3f}; "
             print(test_finished_string)
 
@@ -126,19 +126,17 @@ def main(args):
             state_dict = model.module.state_dict()
             #savepath = os.path.join(args.savefolder, "checkpoint_ep"+str(epoch)+".pth.tar")
             savepath = os.path.join(args.savefolder, "last_checkpoint.pth.tar")
-            save_checkpoint({"state_dict": state_dict, "epoch": epoch}, savepath)
+            data = {"state_dict": state_dict, "epoch": epoch, "results_history":results_history}
+            save_checkpoint(data, savepath)
 
         scheduler.step()
     
-    #let's save to file loss history
-    torch.save(model.loss_history.detach().cpu() ,os.path.join("deep","results", "losses.pth"))
-
     #let's save to file metrics history
-    with open(os.path.join("deep","results", "metrics.json"), "w") as outfile:
-        json.dump(model.test_metrics_history, outfile)
+    with open(os.path.join("deep","results", "results_history.json"), "w") as outfile:
+        json.dump(results_history, outfile)
 
 
-def train(epoch_idx, model, triplet_loss_function, id_loss_function, optimizer, trainloader, device, verbose:bool=True):
+def train(epoch_idx, model, triplet_loss_function, id_loss_function, optimizer, trainloader, device, results_history:ResultsDict, verbose:bool=True):
     
     # Train one epoch
     model.train()
@@ -170,13 +168,12 @@ def train(epoch_idx, model, triplet_loss_function, id_loss_function, optimizer, 
 
         if verbose:
             print(f"Epoch: {epoch_idx} Batch: {batch_idx}/{len_trainloader}, Loss: {loss.item():.4f} ({tr_loss.item():.4f} + {id_loss.item():.4f})")
+    
+    results_history["triplet-loss"].append(epoch_triplet_loss/len_trainloader)
+    results_history["id-loss"].append(epoch_id_loss/len_trainloader)
+    results_history["total-loss"].append(epoch_total_loss/len_trainloader)
 
-
-    losses = torch.Tensor((epoch_triplet_loss, epoch_id_loss, epoch_total_loss)).to(device=device) / len_trainloader
-    model.loss_history = torch.cat((model.loss_history, losses.unsqueeze(1)),dim=1)
-
-
-def test(model, queryloader, galleryloader, device, first_test:bool=False):
+def test(model, queryloader, galleryloader, device, results_history:ResultsDict):
     """
     Using given query and gallery datasets, let's try to perform a retrieval, looking for performance.
 
@@ -194,25 +191,15 @@ def test(model, queryloader, galleryloader, device, first_test:bool=False):
 
     # Let's calculate distance matrix between queries and gallery items    
     distances = L2_distance(qf,gf)
-
-    if first_test:
-        model.test_metrics_history['mAP'] = []
-        model.test_metrics_history['mINP'] = []
-        model.test_metrics_history['rank-1'] = []
-        model.test_metrics_history['rank-2'] = []
-        model.test_metrics_history['rank-5'] = []
-        model.test_metrics_history['rank-10'] = []
-        model.test_metrics_history['rank-15'] = []
-        model.test_metrics_history['rank-20'] = []
         
-    model.test_metrics_history['mAP'].append(calculate_mAP(distances, q_pids, g_pids))
-    model.test_metrics_history['mINP'].append(calculate_mINP(distances, q_pids, g_pids))
-    model.test_metrics_history['rank-1'].append(calculate_CMC(distances, q_pids, g_pids, 1))
-    model.test_metrics_history['rank-2'].append(calculate_CMC(distances, q_pids, g_pids, 2))
-    model.test_metrics_history['rank-5'].append(calculate_CMC(distances, q_pids, g_pids, 5))
-    model.test_metrics_history['rank-10'].append(calculate_CMC(distances, q_pids, g_pids, 10))
-    model.test_metrics_history['rank-15'].append(calculate_CMC(distances, q_pids, g_pids, 15))
-    model.test_metrics_history['rank-20'].append(calculate_CMC(distances, q_pids, g_pids, 20))
+    results_history['mAP'].append(calculate_mAP(distances, q_pids, g_pids))
+    results_history['mINP'].append(calculate_mINP(distances, q_pids, g_pids))
+    results_history['rank-1'].append(calculate_CMC(distances, q_pids, g_pids, 1))
+    results_history['rank-2'].append(calculate_CMC(distances, q_pids, g_pids, 2))
+    results_history['rank-5'].append(calculate_CMC(distances, q_pids, g_pids, 5))
+    results_history['rank-10'].append(calculate_CMC(distances, q_pids, g_pids, 10))
+    results_history['rank-15'].append(calculate_CMC(distances, q_pids, g_pids, 15))
+    results_history['rank-20'].append(calculate_CMC(distances, q_pids, g_pids, 20))
     
     return
 
