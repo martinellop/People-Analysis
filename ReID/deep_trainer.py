@@ -5,6 +5,7 @@ import torch.optim as optim
 import argparse
 import os
 from matplotlib import pyplot as plt
+import json 
 
 from deep.dataset import get_dataloader
 from deep.model import ReIDModel
@@ -12,11 +13,11 @@ from deep.triplet_loss import TripletLoss
 from deep.tools import save_checkpoint
 
 from common.distances import L2_distance
-from common.evaluation_metrics import calculate_CMC
+from common.evaluation_metrics import calculate_CMC, calculate_mAP, calculate_mINP
 
 
 """
-References:
+Main references:
 [1]:
     H. Luo et al., "A Strong Baseline and Batch Normalization Neck for Deep Person Re-Identification,"
     in IEEE Transactions on Multimedia, vol. 22, no. 10, pp. 2597-2609,
@@ -25,7 +26,12 @@ References:
 [2]:
     Z. Zhong, L. Zheng, D. Cao and S. Li, "Re-ranking Person Re-identification with k-Reciprocal Encoding,"
     2017 IEEE Conference on Computer Vision and Pattern Recognition (CVPR), Honolulu, HI, USA,
-    2017, pp. 3652-3661, doi: 10.1109/CVPR.2017.389.    
+    2017, pp. 3652-3661, doi: 10.1109/CVPR.2017.389.
+
+[3]:
+    M. Ye, et al.,"Deep Learning for Person Re-Identification: A Survey and Outlook" 
+    in IEEE Transactions on Pattern Analysis & Machine Intelligence, vol. 44, no. 06, pp. 2872-2893, 
+    2022. doi: 10.1109/TPAMI.2021.3054775        
 """
 
 
@@ -89,7 +95,13 @@ def main(args):
 
     # here will be appended loss values after every epoch (triplet_loss, id_loss, total_loss)
     # --> it will be also saved from checkpoints
-    model.loss_history = torch.zeros(size=(3,0), device=device, dtype=torch.float)   
+    model.loss_history = torch.zeros(size=(3,0), device=device, dtype=torch.float)
+
+    # here will be appended metrics values after every epoch (which one is defined by the test() function)
+    # --> it will be also saved from checkpoints
+    model.test_metrics_history = {}   
+
+    print_metrics_while_training = False  #set to false to improve perfomance.
 
     print("Start Train")
     for epoch in range(start_epoch, args.max_epoch):
@@ -99,8 +111,16 @@ def main(args):
         if epoch % args.test_interval == 0 or epoch+1 == args.max_epoch:
             # Valuta il trainset
             print("Start test")
-            rank1 = test(model, queryloader, galleryloader, device)
-            print("Test Finished. Rank1 accuracy: ", rank1)
+            test(model, queryloader, galleryloader, device, first_test=(epoch==0))
+
+            test_finished_string = "Test Finished. "
+
+            if print_metrics_while_training:
+                for k in model.test_metrics_history.keys():
+                    test_finished_string += k
+                    value = model.test_metrics_history[k][-1]
+                    test_finished_string += f": {value:.3f}; "
+            print(test_finished_string)
 
             # Let's also have a checkpoint, saving model status
             state_dict = model.module.state_dict()
@@ -112,6 +132,10 @@ def main(args):
     
     #let's save to file loss history
     torch.save(model.loss_history.detach().cpu() ,os.path.join("deep","results", "losses.pth"))
+
+    #let's save to file metrics history
+    with open(os.path.join("deep","results", "metrics.json"), "w") as outfile:
+        json.dump(model.test_metrics_history, outfile)
 
 
 def train(epoch_idx, model, triplet_loss_function, id_loss_function, optimizer, trainloader, device, verbose:bool=True):
@@ -147,21 +171,19 @@ def train(epoch_idx, model, triplet_loss_function, id_loss_function, optimizer, 
         if verbose:
             print(f"Epoch: {epoch_idx} Batch: {batch_idx}/{len_trainloader}, Loss: {loss.item():.4f} ({tr_loss.item():.4f} + {id_loss.item():.4f})")
 
-        #tmp
-        if batch_idx == 19:
-            break
 
     losses = torch.Tensor((epoch_triplet_loss, epoch_id_loss, epoch_total_loss)).to(device=device) / len_trainloader
     model.loss_history = torch.cat((model.loss_history, losses.unsqueeze(1)),dim=1)
 
 
-def test(model, queryloader, galleryloader, device):
+def test(model, queryloader, galleryloader, device, first_test:bool=False):
     """
     Using given query and gallery datasets, let's try to perform a retrieval, looking for performance.
 
     Metrics:
         * CMC rank-n
         * mAP
+        * mINP --> see [3]
     """
     model.eval()
     #print("Test: Extract Query")
@@ -170,15 +192,29 @@ def test(model, queryloader, galleryloader, device):
     gf, g_pids = extract_feature(model, galleryloader, device)
 
 
-    # Let's calculate distance matrix between queries and gallery items
-
-    m, n = qf.size(0), gf.size(0)
-    
+    # Let's calculate distance matrix between queries and gallery items    
     distances = L2_distance(qf,gf)
 
-    cmc = calculate_CMC(distances, q_pids, g_pids, 1)   #cmc rank-1
-
-    return cmc
+    if first_test:
+        model.test_metrics_history['mAP'] = []
+        model.test_metrics_history['mINP'] = []
+        model.test_metrics_history['rank-1'] = []
+        model.test_metrics_history['rank-2'] = []
+        model.test_metrics_history['rank-5'] = []
+        model.test_metrics_history['rank-10'] = []
+        model.test_metrics_history['rank-15'] = []
+        model.test_metrics_history['rank-20'] = []
+        
+    model.test_metrics_history['mAP'].append(calculate_mAP(distances, q_pids, g_pids))
+    model.test_metrics_history['mINP'].append(calculate_mINP(distances, q_pids, g_pids))
+    model.test_metrics_history['rank-1'].append(calculate_CMC(distances, q_pids, g_pids, 1))
+    model.test_metrics_history['rank-2'].append(calculate_CMC(distances, q_pids, g_pids, 2))
+    model.test_metrics_history['rank-5'].append(calculate_CMC(distances, q_pids, g_pids, 5))
+    model.test_metrics_history['rank-10'].append(calculate_CMC(distances, q_pids, g_pids, 10))
+    model.test_metrics_history['rank-15'].append(calculate_CMC(distances, q_pids, g_pids, 15))
+    model.test_metrics_history['rank-20'].append(calculate_CMC(distances, q_pids, g_pids, 20))
+    
+    return
 
 
 @torch.no_grad()
