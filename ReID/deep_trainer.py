@@ -6,10 +6,11 @@ import argparse
 import os
 from matplotlib import pyplot as plt
 import json 
+import time
 
 from deep.dataset import get_dataloader
 from deep.model import ReIDModel
-from deep.triplet_loss import TripletLoss
+from deep.custom_losses import TripletLoss, CenterLoss
 from deep.tools import save_checkpoint, ResultsDict
 
 from common.distances import L2_distance
@@ -19,12 +20,12 @@ from common.evaluation_metrics import calculate_CMC, calculate_mAP, calculate_mI
 """
 Main references:
 [1]:
-    H. Luo et al., "A Strong Baseline and Batch Normalization Neck for Deep Person Re-Identification,"
+    H. Luo et al., "A Strong Baseline and Batch Normalization Neck for Deep Person Re-Identification"
     in IEEE Transactions on Multimedia, vol. 22, no. 10, pp. 2597-2609,
     Oct. 2020, doi: 10.1109/TMM.2019.2958756.
 
 [2]:
-    Z. Zhong, L. Zheng, D. Cao and S. Li, "Re-ranking Person Re-identification with k-Reciprocal Encoding,"
+    Z. Zhong, L. Zheng, D. Cao and S. Li, "Re-ranking Person Re-identification with k-Reciprocal Encoding"
     2017 IEEE Conference on Computer Vision and Pattern Recognition (CVPR), Honolulu, HI, USA,
     2017, pp. 3652-3661, doi: 10.1109/CVPR.2017.389.
 
@@ -49,6 +50,7 @@ def parse_options():
     parser.add_argument('--height', type=int, default=224)
     parser.add_argument('--width', type=int, default=224)
     parser.add_argument('--use_bbneck', type=int, default=1)        # logically it's just a bool
+    parser.add_argument('--use_center_loss', type=int, default=1)   # logically it's just a bool
     parser.add_argument('--num_classes', type=int)                  # maximum number of identities to be classified
 
     # Model training
@@ -59,8 +61,7 @@ def parse_options():
     parser.add_argument('--triplet_margin', type=float, default=0.3)# the margin used by the triplet loss function. default value taken from [1]
 
     # Resume
-    parser.add_argument('--resume', type=int, default=0)            # logically it's just a bool
-    parser.add_argument('--checkpoint', type=str)
+    parser.add_argument('--resume_checkpoint', type=str, default="")
     parser.add_argument('--savefolder', type=str, default=os.path.join("deep","checkpoints"))
 
     args, _ = parser.parse_known_args()
@@ -79,6 +80,10 @@ def main(args):
     model = ReIDModel(args)
     
     triplet_loss = TripletLoss(args.triplet_margin).to(device=device)
+    if args.use_center_loss:
+        center_loss = CenterLoss().to(device=device)
+    else:
+        center_loss = None
     id_loss = nn.CrossEntropyLoss().to(device=device)
 
     # Variable  learning rate:
@@ -90,9 +95,9 @@ def main(args):
     results_history = ResultsDict()   
 
     start_epoch = 0
-    if bool(args.resume):
-        print(f"Loading checkpoint from {args.checkpoint}")
-        checkpoint = torch.load(args.checkpoint)
+    if args.resume_checkpoint != "":
+        print(f"Loading checkpoint from {args.resume_checkpoint}")
+        checkpoint = torch.load(args.resume_checkpoint)
         model.load_state_dict(checkpoint['state_dict'])
         start_epoch = checkpoint['epoch'] + 1
         results_history = checkpoint["results_history"]
@@ -105,8 +110,9 @@ def main(args):
 
     print("Start Train")
     for epoch in range(start_epoch, args.max_epoch):
-        print("Epoch", epoch)
-        train(epoch, model, triplet_loss, id_loss, optimizer, trainloader, device, results_history, verbose=False)
+        print("+ Starting epoch", epoch)
+        t1 = time.time()
+        train(epoch, model, triplet_loss, id_loss, center_loss, optimizer, trainloader, device, results_history, verbose=False)
 
         if epoch % args.test_interval == 0 or epoch+1 == args.max_epoch:
             # Valuta il trainset
@@ -130,20 +136,25 @@ def main(args):
             save_checkpoint(data, savepath)
 
         scheduler.step()
+        print(f"+ Finished epoch {epoch} in {(time.time() - t1):.1f} seconds.")
     
     #let's save to file metrics history
     with open(os.path.join("deep","results", "results_history.json"), "w") as outfile:
         json.dump(results_history, outfile)
 
 
-def train(epoch_idx, model, triplet_loss_function, id_loss_function, optimizer, trainloader, device, results_history:ResultsDict, verbose:bool=True):
+def train(epoch_idx, model, triplet_loss_function, id_loss_function, center_loss_function, optimizer, trainloader, device, results_history:ResultsDict, verbose:bool=True):
     
     # Train one epoch
     model.train()
     len_trainloader = len(trainloader)
     epoch_triplet_loss = 0
     epoch_id_loss = 0
+    epoch_center_loss = 0
     epoch_total_loss = 0
+
+    use_center_loss = (center_loss_function is not None)
+    center_loss_multiplier = 0.005      # the value pointed out by [1] as best compromise.
 
     for batch_idx, (imgs, pids) in enumerate(trainloader):
         imgs, pids = imgs.to(device=device), pids.to(device=device)
@@ -154,8 +165,16 @@ def train(epoch_idx, model, triplet_loss_function, id_loss_function, optimizer, 
         # loss calculation
         tr_loss = triplet_loss_function(features_vector, pids)
         id_loss = id_loss_function(class_results, pids)
+           
+        
         # loss merge 
         loss = tr_loss + id_loss                                # maybe we could add a discount value between loss values
+
+        # eventual center loss integration
+        if use_center_loss:
+            center_loss = center_loss_multiplier * center_loss_function(features_vector, pids)
+            loss = loss + center_loss
+            epoch_center_loss += center_loss.item()
 
         # saving loss data for final stats
         epoch_triplet_loss += tr_loss.item()
@@ -172,6 +191,8 @@ def train(epoch_idx, model, triplet_loss_function, id_loss_function, optimizer, 
     results_history["triplet-loss"].append(epoch_triplet_loss/len_trainloader)
     results_history["id-loss"].append(epoch_id_loss/len_trainloader)
     results_history["total-loss"].append(epoch_total_loss/len_trainloader)
+    if use_center_loss:
+        results_history["center-loss"].append(epoch_center_loss/len_trainloader)
 
 def test(model, queryloader, galleryloader, device, results_history:ResultsDict):
     """
@@ -206,17 +227,8 @@ def test(model, queryloader, galleryloader, device, results_history:ResultsDict)
 
 @torch.no_grad()
 def extract_feature(model:nn.Module, dataloader, device):
-    # data una immagine estra le feature escludendo la parte di classificazione
-    pids = []
+
     for batch_idx, (imgs, batch_pids) in enumerate(dataloader):
-        # TODO: c'e' questo codice per flippare l'immagine e calcolare il fv anche su quello e poi sommarlo
-        #          non so se abbia troppo senso, nel dubbio lo lascio commentato
-        '''          
-        flip_imgs = torch.flip(imgs, (3,))  # flippa le immagini
-        flip_imgs = flip_imgs.cuda()
-        batch_features_flip = model(flip_imgs, True).data.cpu()
-        batch_features += batch_features_flip
-        '''
 
         imgs = imgs.to(device=device)
         batch_features = model(imgs).data
@@ -241,7 +253,6 @@ if __name__ == '__main__':
 """
 Possible improvements:
     + modify network last stage from stride 2 to stride 1  (Last stride)--> [1]
-    + add Center Loss to current loss function --> [1]
 
-    + evaluation between euclidean and cosine distances in triplet loss calculation. Accordingly to [1], euclidean should be better tho.
+    + study if better cosine or euclidean distance in inference time. According to [1], it should be better cosine.
 """

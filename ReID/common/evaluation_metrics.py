@@ -129,3 +129,43 @@ def calculate_mINP(distances:torch.Tensor, query_ids:torch.Tensor, gallery_ids:t
         return
     
     return inp.sum(0).item() / k1
+
+
+
+
+if __name__ == '__main__':
+    #Let's make some tests.
+
+    #test1
+    query = torch.tensor((2), dtype=torch.int).reshape(1)
+    gallery = torch.tensor((1, 2, 1, 3, 2, 4, 3, 1, 2, 9), dtype=torch.int)
+    distances = torch.tensor((0.9, 0.15, 0.8, 0.75, 0.2, 0.56, 0.88, 0.7, 0.08, 0.9), dtype=torch.float).reshape(1,10)
+
+    rank1 = calculate_CMC(distances, query, gallery, 1)     #should be 1.0
+    mAP = calculate_mAP(distances, query, gallery)          #should be 1.0
+    mINP = calculate_mINP(distances, query, gallery)        #should be 1.0
+    print(f"Test1: rank1: {rank1}, mAP: {mAP}, mINP: {mINP}")
+
+
+
+    #test 2
+    query = torch.tensor((2), dtype=torch.int).reshape(1)
+    gallery = torch.tensor((1, 2, 1, 3, 2, 4, 3, 1, 2, 9), dtype=torch.int)
+    distances = torch.tensor((0.9, 0.15, 0.8, 0.75, 0.2, 0.56, 0.88, 0.7, 1.3, 0.9), dtype=torch.float).reshape(1,10)
+
+    rank1 = calculate_CMC(distances, query, gallery, 1)     #should be 1.0
+    mAP = calculate_mAP(distances, query, gallery)          #should be 0.77
+    mINP = calculate_mINP(distances, query, gallery)        #should be 0.30
+    print(f"Test2: rank1: {rank1}, mAP: {mAP}, mINP: {mINP}")
+
+
+
+    #test 3
+    query = torch.tensor((2), dtype=torch.int).reshape(1)
+    gallery = torch.tensor((1, 2, 1, 3, 2, 4, 3, 1, 2, 9), dtype=torch.int)
+    distances = torch.tensor((0.9, 0.15, 0.16, 0.17, 0.2, 0.56, 0.88, 0.7, 0.21, 0.9), dtype=torch.float).reshape(1,10)
+
+    rank1 = calculate_CMC(distances, query, gallery, 1)     #should be 1.0
+    mAP = calculate_mAP(distances, query, gallery)          #should be 0.70
+    mINP = calculate_mINP(distances, query, gallery)        #should be 0.60
+    print(f"Test3: rank1: {rank1}, mAP: {mAP}, mINP: {mINP}")
