@@ -51,17 +51,18 @@ def parse_options():
     parser.add_argument('--width', type=int, default=224)
     parser.add_argument('--use_bbneck', type=int, default=1)        # logically it's just a bool
     parser.add_argument('--use_center_loss', type=int, default=1)   # logically it's just a bool
-    parser.add_argument('--num_classes', type=int)                  # maximum number of identities to be classified
+    parser.add_argument('--num_classes', type=int, default=200)     # maximum number of identities to be classified
 
     # Model training
     parser.add_argument('--batch_size', type=int, default=16)
     parser.add_argument('--workers', type=int, default=4)
-    parser.add_argument('--max_epoch', type=int)
+    parser.add_argument('--max_epoch', type=int, default=50)
     parser.add_argument('--test_interval', type=int, default=1)     # how many epochs to be process before a test?
     parser.add_argument('--triplet_margin', type=float, default=0.3)# the margin used by the triplet loss function. default value taken from [1]
 
-    # Resume
+    # Checkpoints
     parser.add_argument('--resume_checkpoint', type=str, default="")
+    parser.add_argument('--checkpoint_every', type=int, default=5)  # how many epoch to process before saving a checkpoint?
     parser.add_argument('--savefolder', type=str, default=os.path.join("deep","checkpoints"))
 
     args, _ = parser.parse_known_args()
@@ -107,7 +108,6 @@ def main(args):
 
 
     print_metrics_while_training = False  #set to false to improve perfomance.
-
     print("Start Train")
     for epoch in range(start_epoch, args.max_epoch):
         print("+ Starting epoch", epoch)
@@ -128,16 +128,24 @@ def main(args):
                     test_finished_string += f": {value:.3f}; "
             print(test_finished_string)
 
-            # Let's also have a checkpoint, saving model status
-            state_dict = model.module.state_dict()
-            #savepath = os.path.join(args.savefolder, "checkpoint_ep"+str(epoch)+".pth.tar")
-            savepath = os.path.join(args.savefolder, "last_checkpoint.pth.tar")
-            data = {"state_dict": state_dict, "epoch": epoch, "results_history":results_history}
-            save_checkpoint(data, savepath)
+            if (epoch+1) % model.checkpoint_every:
+
+                # Let's have a checkpoint, saving model status
+                state_dict = model.module.state_dict()
+                #savepath = os.path.join(args.savefolder, "checkpoint_ep"+str(epoch)+".pth.tar")
+                savepath = os.path.join(args.savefolder, "last_checkpoint.pth.tar")
+                data = {"state_dict": state_dict, "epoch": epoch, "results_history":results_history}
+                save_checkpoint(data, savepath)
+                print(f"Saved checkpoint at {savepath}")
 
         scheduler.step()
         print(f"+ Finished epoch {epoch} in {(time.time() - t1):.1f} seconds.")
     
+    print("+++++ Finished training +++++")
+
+    #saving model
+    torch.save(model.state_dict(), "model.bin")
+
     #let's save to file metrics history
     with open(os.path.join("deep","results", "results_history.json"), "w") as outfile:
         json.dump(results_history, outfile)

@@ -1,8 +1,8 @@
 import torch
 
 
-def calculate_ids(distances:torch.Tensor, gallery_ids:torch.Tensor, limit_to_first_elements:int = -1):
-    
+def _calculate_ids(distances:torch.Tensor, gallery_ids:torch.Tensor, limit_to_first_elements:int = -1):
+
     idxs = torch.argsort(distances, dim=-1)
     if limit_to_first_elements > 0:
         idxs = idxs[:, :limit_to_first_elements]
@@ -36,7 +36,7 @@ def calculate_CMC(distances:torch.Tensor, query_ids:torch.Tensor, gallery_ids:to
     assert rank > 0 and rank <= gallery_ids.shape[0]
 
     k1, k2  = distances.shape
-    calc_ids = calculate_ids(distances, gallery_ids, limit_to_first_elements=rank)
+    calc_ids = _calculate_ids(distances, gallery_ids, limit_to_first_elements=rank)
 
     query_ids = query_ids.unsqueeze(1).expand(-1, rank)     # (k1, rank)
 
@@ -68,7 +68,7 @@ def calculate_mAP(distances:torch.Tensor, query_ids:torch.Tensor, gallery_ids:to
     device = distances.device
     k1, k2  = distances.shape
 
-    calc_ids = calculate_ids(distances, gallery_ids)
+    calc_ids = _calculate_ids(distances, gallery_ids)
     
     query_ids = query_ids.unsqueeze(1).expand(-1, k2)               # (k1, k2)
     correct_matches = (calc_ids == query_ids)
@@ -113,7 +113,7 @@ def calculate_mINP(distances:torch.Tensor, query_ids:torch.Tensor, gallery_ids:t
     device = distances.device
     k1, k2  = distances.shape
     
-    calc_ids = calculate_ids(distances, gallery_ids)
+    calc_ids = _calculate_ids(distances, gallery_ids)
     query_ids = query_ids.unsqueeze(1).expand(-1, k2)               # (k1, k2)
     correct_matches = (calc_ids == query_ids)
 
