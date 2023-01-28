@@ -115,7 +115,7 @@ def main(args):
     for epoch in range(start_epoch, args.max_epoch):
         print("+ Starting epoch", epoch)
         t1 = time.time()
-        train(epoch, model, triplet_loss, id_loss, center_loss, optimizer, trainloader, device, results_history, verbose=False)
+        train(epoch, model, triplet_loss, id_loss, center_loss, optimizer, trainloader, device, results_history, verbose=True)
 
         if epoch % args.test_interval == 0 or epoch+1 == args.max_epoch:
             # Valuta il trainset
