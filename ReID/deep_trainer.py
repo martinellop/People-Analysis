@@ -63,7 +63,10 @@ def parse_options():
     # Checkpoints
     parser.add_argument('--resume_checkpoint', type=str, default="")
     parser.add_argument('--checkpoint_every', type=int, default=5)  # how many epoch to process before saving a checkpoint?
-    parser.add_argument('--savefolder', type=str, default=os.path.join("deep","checkpoints"))
+
+    parser.add_argument('--checkpoints_folder', type=str, default=os.path.join("deep","checkpoints"))
+    parser.add_argument('--results_folder', type=str, default=os.path.join("deep","results"))
+    
 
     args, _ = parser.parse_known_args()
     return args
@@ -132,8 +135,8 @@ def main(args):
 
                 # Let's have a checkpoint, saving model status
                 state_dict = model.module.state_dict()
-                #savepath = os.path.join(args.savefolder, "checkpoint_ep"+str(epoch)+".pth.tar")
-                savepath = os.path.join(args.savefolder, "last_checkpoint.pth.tar")
+                #savepath = os.path.join(args.checkpoints_folder, "checkpoint_ep"+str(epoch)+".pth.tar")
+                savepath = os.path.join(args.checkpoints_folder, "last_checkpoint.pth.tar")
                 data = {"state_dict": state_dict, "epoch": epoch, "results_history":results_history}
                 save_checkpoint(data, savepath)
                 print(f"Saved checkpoint at {savepath}")
@@ -143,11 +146,12 @@ def main(args):
     
     print("+++++ Finished training +++++")
 
-    #saving model
-    torch.save(model.state_dict(), "model.bin")
 
+    results_dir = args.results_folder
+    #saving model
+    torch.save(model.state_dict(), os.path.join(results_dir, "model.bin"))
     #let's save to file metrics history
-    with open(os.path.join("deep","results", "results_history.json"), "w") as outfile:
+    with open(os.path.join(results_dir, "results_history.json"), "w") as outfile:
         json.dump(results_history, outfile)
 
 
