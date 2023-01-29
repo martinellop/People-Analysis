@@ -81,7 +81,7 @@ def main(args):
         print("You are running on", torch.cuda.get_device_name(), "gpu.")
 
     trainloader, queryloader, galleryloader = get_dataloader(args)
-    model = ReIDModel(args)
+    model = ReIDModel(args).to(device)
     
     triplet_loss = TripletLoss(args.triplet_margin).to(device=device)
     if args.use_center_loss:
@@ -107,15 +107,12 @@ def main(args):
         results_history = checkpoint["results_history"]
         print("Restarting from Epoch", start_epoch)
 
-    model = nn.DataParallel(model).to(device=device)
-
-
     print_metrics_while_training = False  #set to false to improve perfomance.
     print("Start Train")
     for epoch in range(start_epoch, args.max_epoch):
         print("+ Starting epoch", epoch)
         t1 = time.time()
-        train(epoch, model, triplet_loss, id_loss, center_loss, optimizer, trainloader, device, results_history, verbose=True)
+        train(epoch, model, triplet_loss, id_loss, center_loss, optimizer, trainloader, device, results_history, verbose=False)
 
         if epoch % args.test_interval == 0 or epoch+1 == args.max_epoch:
             # Valuta il trainset
@@ -131,10 +128,10 @@ def main(args):
                     test_finished_string += f": {value:.3f}; "
             print(test_finished_string)
 
-            if (epoch+1) % model.checkpoint_every:
+            if (epoch+1) % args.checkpoint_every:
 
                 # Let's have a checkpoint, saving model status
-                state_dict = model.module.state_dict()
+                state_dict = model.state_dict()
                 #savepath = os.path.join(args.checkpoints_folder, "checkpoint_ep"+str(epoch)+".pth.tar")
                 savepath = os.path.join(args.checkpoints_folder, "last_checkpoint.pth.tar")
                 data = {"state_dict": state_dict, "epoch": epoch, "results_history":results_history}
@@ -198,13 +195,14 @@ def train(epoch_idx, model, triplet_loss_function, id_loss_function, center_loss
         optimizer.step()
 
         if verbose:
-            print(f"Epoch: {epoch_idx} Batch: {batch_idx}/{len_trainloader}, Loss: {loss.item():.4f} ({tr_loss.item():.4f} + {id_loss.item():.4f})")
+            print(f"Epoch: {epoch_idx} Batch: {batch_idx}/{len_trainloader}, Loss: {loss.item():.4f} ({tr_loss.item():.4f} + {id_loss.item():.4f})") 
     
     results_history["triplet-loss"].append(epoch_triplet_loss/len_trainloader)
     results_history["id-loss"].append(epoch_id_loss/len_trainloader)
     results_history["total-loss"].append(epoch_total_loss/len_trainloader)
     if use_center_loss:
         results_history["center-loss"].append(epoch_center_loss/len_trainloader)
+    
 
 def test(model, queryloader, galleryloader, device, results_history:ResultsDict):
     """
@@ -252,7 +250,7 @@ def extract_feature(model:nn.Module, dataloader, device):
             pids = batch_pids
         else:
             features = torch.cat((features, batch_features),0)
-            pids = torch.cat((pids, batch_pids.flatten()), 0)
+            pids = torch.cat((pids, batch_pids), 0)
                 
     return features, pids
 

@@ -30,7 +30,7 @@ base="
 --max_epoch 200
 --batch_size 16
 
---workers 8
+--workers 4
 --test_interval 2
 "
 
