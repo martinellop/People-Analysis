@@ -116,43 +116,50 @@ def main(args):
         print(f"Loading checkpoint from {args.resume_checkpoint}")
         checkpoint = torch.load(args.resume_checkpoint)
         model.load_state_dict(checkpoint['state_dict'])
+        optimizer.load_state_dict(checkpoint['optimizer'])
+        scheduler.load_state_dict(checkpoint['scheduler'])
         start_epoch = checkpoint['epoch'] + 1
         results_history = checkpoint["results_history"]
         print("Restarting from Epoch", start_epoch)
 
-    print_metrics_while_training = True
     print("Start Train")
     for epoch in range(start_epoch, args.max_epoch):
         print("++ Starting epoch", epoch)
         t1 = time.time()
         train(epoch, model, triplet_loss, id_loss, center_loss, optimizer, trainloader, device, results_history, verbose=False)
 
+
+        new_metrics = False      
         if epoch % args.test_interval == 0 or epoch+1 == args.max_epoch:
             # Valuta il trainset
             print("Start test")
+            t2 = time.time()
             test(model, queryloader, galleryloader,dist_function, device, results_history, queries_batch)
+            print(f"Test finished in {(time.time()-t2):.1f} seconds.")
+            new_metrics = True
 
-            test_finished_string = "Test Finished. "
-
-            if print_metrics_while_training:
-                for k in results_history.keys():
-                    test_finished_string += k
-                    value = results_history[k][-1]
-                    test_finished_string += f": {value:.4f}; "
-            print(test_finished_string)
-
-            if (epoch+1) % args.checkpoint_every:
-
-                # Let's have a checkpoint, saving model status
-                state_dict = model.state_dict()
-                savepath = os.path.join(args.checkpoints_folder, "checkpoint_ep"+str(epoch)+".pth.tar")
-                #savepath = os.path.join(args.checkpoints_folder, "last_checkpoint.pth.tar")
-                data = {"state_dict": state_dict, "epoch": epoch, "results_history":results_history}
-                save_checkpoint(data, savepath)
-                print(f"Saved checkpoint at {savepath}")
+        if epoch % args.checkpoint_every:
+            # Let's have a checkpoint, saving model status
+            state_dict = model.state_dict()
+            optimazer_status = optimizer.state_dict()
+            scheduler_status = scheduler.state_dict()
+            savepath = os.path.join(args.checkpoints_folder, "checkpoint_ep"+str(epoch)+".pth.tar")
+            #savepath = os.path.join(args.checkpoints_folder, "last_checkpoint.pth.tar")
+            data = {"state_dict": state_dict, "epoch": epoch, "results_history":results_history, "optimizer":optimazer_status, "scheduler":scheduler_status}
+            save_checkpoint(data, savepath)
+            print(f"Saved checkpoint at {savepath}")
 
         scheduler.step()
         print(f"++ Finished epoch {epoch} in {(time.time() - t1):.1f} seconds.")
+
+
+        last_data = ""
+        for k in results_history.keys():
+            if new_metrics or "loss" in k:
+                last_data += k
+                value = results_history[k][-1]
+                last_data += f": {value:.4f}; "
+        print(f"Results epoch {epoch}: {last_data}")
     
     print("+++++ Finished training +++++")
 

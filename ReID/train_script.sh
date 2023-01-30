@@ -27,7 +27,7 @@ base="
 --results_folder /work/cvcs_2022_group02/results
 
 --num_classes 1500
---max_epoch 200
+--max_epoch 150
 --batch_size 16
 --queries_batch 30
 
