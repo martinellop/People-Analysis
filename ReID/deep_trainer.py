@@ -4,17 +4,17 @@ import torch.optim as optim
 
 import argparse
 import os
-from matplotlib import pyplot as plt
 import json 
 import time
+import math
 
 from deep.dataset import get_dataloader
 from deep.model import ReIDModel
 from deep.custom_losses import TripletLoss, CenterLoss
 from deep.tools import save_checkpoint, ResultsDict
 
-from common.distances import L2_distance
-from common.evaluation_metrics import calculate_CMC, calculate_mAP, calculate_mINP
+from common.distances import L2_distance, Cosine_distance
+from common.evaluation_metrics import calculate_CMC, calculate_mAP, calculate_mINP, pair_ids_with_distance_matrix
 
 
 """
@@ -57,6 +57,10 @@ def parse_options():
     parser.add_argument('--batch_size', type=int, default=16)
     parser.add_argument('--workers', type=int, default=4)
     parser.add_argument('--max_epoch', type=int, default=50)
+    parser.add_argument('--distance_function', type=str, default='cosine')# distance function used in testing.
+    parser.add_argument('--queries_batch', type=int, default=-1)    # how many queries to put together while processing distance matrix in testing?
+                                                                    # -1 means 'processed all in one batch'
+
     parser.add_argument('--test_interval', type=int, default=1)     # how many epochs to be process before a test?
     parser.add_argument('--triplet_margin', type=float, default=0.3)# the margin used by the triplet loss function. default value taken from [1]
 
@@ -90,6 +94,15 @@ def main(args):
         center_loss = None
     id_loss = nn.CrossEntropyLoss().to(device=device)
 
+    queries_batch = args.queries_batch
+    
+    if args.distance_function == 'cosine':
+        dist_function = Cosine_distance
+    elif args.distance_function == 'euclidean':
+        dist_function = L2_distance
+    else:
+        raise Exception("You must select a valid distance function.")
+
     # Variable  learning rate:
     optimizer = optim.Adam(model.parameters(), lr=0.0035)                       # starting value chose accordingly to [1]
     scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=30, gamma=0.1)   # every 30 epochs, lr is multiplied by 0.1
@@ -107,17 +120,17 @@ def main(args):
         results_history = checkpoint["results_history"]
         print("Restarting from Epoch", start_epoch)
 
-    print_metrics_while_training = False  #set to false to improve perfomance.
+    print_metrics_while_training = True
     print("Start Train")
     for epoch in range(start_epoch, args.max_epoch):
-        print("+ Starting epoch", epoch)
+        print("++ Starting epoch", epoch)
         t1 = time.time()
         train(epoch, model, triplet_loss, id_loss, center_loss, optimizer, trainloader, device, results_history, verbose=False)
 
         if epoch % args.test_interval == 0 or epoch+1 == args.max_epoch:
             # Valuta il trainset
             print("Start test")
-            test(model, queryloader, galleryloader, device, results_history)
+            test(model, queryloader, galleryloader,dist_function, device, results_history, queries_batch)
 
             test_finished_string = "Test Finished. "
 
@@ -125,21 +138,21 @@ def main(args):
                 for k in results_history.keys():
                     test_finished_string += k
                     value = results_history[k][-1]
-                    test_finished_string += f": {value:.3f}; "
+                    test_finished_string += f": {value:.4f}; "
             print(test_finished_string)
 
             if (epoch+1) % args.checkpoint_every:
 
                 # Let's have a checkpoint, saving model status
                 state_dict = model.state_dict()
-                #savepath = os.path.join(args.checkpoints_folder, "checkpoint_ep"+str(epoch)+".pth.tar")
-                savepath = os.path.join(args.checkpoints_folder, "last_checkpoint.pth.tar")
+                savepath = os.path.join(args.checkpoints_folder, "checkpoint_ep"+str(epoch)+".pth.tar")
+                #savepath = os.path.join(args.checkpoints_folder, "last_checkpoint.pth.tar")
                 data = {"state_dict": state_dict, "epoch": epoch, "results_history":results_history}
                 save_checkpoint(data, savepath)
                 print(f"Saved checkpoint at {savepath}")
 
         scheduler.step()
-        print(f"+ Finished epoch {epoch} in {(time.time() - t1):.1f} seconds.")
+        print(f"++ Finished epoch {epoch} in {(time.time() - t1):.1f} seconds.")
     
     print("+++++ Finished training +++++")
 
@@ -195,16 +208,17 @@ def train(epoch_idx, model, triplet_loss_function, id_loss_function, center_loss
         optimizer.step()
 
         if verbose:
-            print(f"Epoch: {epoch_idx} Batch: {batch_idx}/{len_trainloader}, Loss: {loss.item():.4f} ({tr_loss.item():.4f} + {id_loss.item():.4f})") 
+            print(f"Epoch: {epoch_idx} Batch: {batch_idx}/{len_trainloader}, Loss: {loss.item():.5f}")   
     
+    
+    results_history["total-loss"].append(epoch_total_loss/len_trainloader)
     results_history["triplet-loss"].append(epoch_triplet_loss/len_trainloader)
     results_history["id-loss"].append(epoch_id_loss/len_trainloader)
-    results_history["total-loss"].append(epoch_total_loss/len_trainloader)
     if use_center_loss:
         results_history["center-loss"].append(epoch_center_loss/len_trainloader)
     
 
-def test(model, queryloader, galleryloader, device, results_history:ResultsDict):
+def test(model, queryloader, galleryloader, dist_function, device, results_history:ResultsDict, queries_batch:int=-1):
     """
     Using given query and gallery datasets, let's try to perform a retrieval, looking for performance.
 
@@ -220,18 +234,50 @@ def test(model, queryloader, galleryloader, device, results_history:ResultsDict)
     gf, g_pids = extract_feature(model, galleryloader, device)
 
 
-    # Let's calculate distance matrix between queries and gallery items    
-    distances = L2_distance(qf,gf)
-        
-    results_history['mAP'].append(calculate_mAP(distances, q_pids, g_pids))
-    results_history['mINP'].append(calculate_mINP(distances, q_pids, g_pids))
-    results_history['rank-1'].append(calculate_CMC(distances, q_pids, g_pids, 1))
-    results_history['rank-2'].append(calculate_CMC(distances, q_pids, g_pids, 2))
-    results_history['rank-5'].append(calculate_CMC(distances, q_pids, g_pids, 5))
-    results_history['rank-10'].append(calculate_CMC(distances, q_pids, g_pids, 10))
-    results_history['rank-15'].append(calculate_CMC(distances, q_pids, g_pids, 15))
-    results_history['rank-20'].append(calculate_CMC(distances, q_pids, g_pids, 20))
+    # Since calculation of the whole distance matrix (with all queries) takes too much memory,
+    # let's split it in batches of queries.
+    n_queries = q_pids.shape[0]
+    max_queries = queries_batch
+    n_batches = math.ceil(n_queries / max_queries) if max_queries > 0 else 1
+
+    average_map = 0
+    average_mINP = 0
+    average_rank_1 = 0
+    average_rank_2 = 0
+    average_rank_5 = 0
+    average_rank_10 = 0
+    average_rank_15 = 0
+    average_rank_20 = 0
+
+    for i in range(n_batches):
+        start_idx = i*max_queries
+        max_idx = n_queries if i+1 == n_batches else (i+1)*max_queries
+        batched_qf = qf[start_idx:max_idx]
+        batched_q_pids = q_pids[start_idx:max_idx]
+        n_elements = batched_qf.shape[0]
+
+        # Let's calculate distance matrix between queries and gallery items    
+        distances = dist_function(batched_qf,gf)
+
+        calc_ids_matrix = pair_ids_with_distance_matrix(distances, g_pids)
+
+        average_map += calculate_mAP(calc_ids_matrix, batched_q_pids) * n_elements
+        average_mINP += calculate_mINP(calc_ids_matrix, batched_q_pids) * n_elements
+        average_rank_1 += calculate_CMC(calc_ids_matrix, batched_q_pids, 1) * n_elements
+        average_rank_2 += calculate_CMC(calc_ids_matrix, batched_q_pids, 2) * n_elements
+        average_rank_5 += calculate_CMC(calc_ids_matrix, batched_q_pids, 5) * n_elements
+        average_rank_10 += calculate_CMC(calc_ids_matrix, batched_q_pids, 10) * n_elements
+        average_rank_15 += calculate_CMC(calc_ids_matrix, batched_q_pids, 15) * n_elements
+        average_rank_20 += calculate_CMC(calc_ids_matrix, batched_q_pids, 20) * n_elements
     
+    results_history['mAP'].append(average_map/n_queries)
+    results_history['mINP'].append(average_mINP/n_queries)
+    results_history['rank-1'].append(average_rank_1/n_queries)
+    results_history['rank-2'].append(average_rank_2/n_queries)
+    results_history['rank-5'].append(average_rank_5/n_queries)
+    results_history['rank-10'].append(average_rank_10/n_queries)
+    results_history['rank-15'].append(average_rank_15/n_queries)
+    results_history['rank-20'].append(average_rank_20/n_queries)
     return
 
 

@@ -29,10 +29,6 @@ def L2_distance(x:torch.Tensor, y: torch.Tensor, squared_distance:bool=False):
     assert x.dim() == 2 and y.dim() == 2
     assert x.shape[1] == y.shape[1]
 
-    #tmp
-    #return torch.ones(size=(x.shape[0], y.shape[0]), dtype=torch.float, requires_grad=True)
-
-
     x = x.reshape(x.shape[0], 1, x.shape[1])
     y = y.reshape(1, y.shape[0], y.shape[1])
     if squared_distance:
@@ -74,11 +70,9 @@ def Cosine_distance(x: torch.Tensor, y:torch.Tensor):
     assert x.dim() == 2 and y.dim() == 2
     assert x.shape[1] == y.shape[1]
 
-    assert False , "THIS CODE MUST BE REFACTORED"   #to be checked!
-
-    x = x.unsqueeze(1)
-    y = y.unsqueeze(0)
+    x = x.reshape(x.shape[0], 1, x.shape[1])
+    y = y.reshape(1, y.shape[0], y.shape[1])
 
     den = x.norm(dim=-1) * y.norm(dim=-1)
-    similarities = torch.matmul(x, y.t()) / den 
+    similarities = (x * y).sum(-1) / den 
     return 1 - similarities

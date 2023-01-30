@@ -1,11 +1,23 @@
 import torch
 
 
-def _calculate_ids(distances:torch.Tensor, gallery_ids:torch.Tensor, limit_to_first_elements:int = -1):
+def pair_ids_with_distance_matrix(distances:torch.Tensor, gallery_ids:torch.Tensor):
+    """
+    It returns a matrix with the same shape of `distances`, where every element is the ID of the gallery item.
+    Each row will be sorted using distance increasing order, so that the first indexes will correspond to the most similar pairs.
+    
+    Args:
+
+        distances:      matrix [k1, k2], where `Distances[i,j]` is the pairwise distances between query-i and gallery-j.
+        gallery_ids:    vector [k2] where `gallery_ids[j]` is the ID corresponding to gallery-j.
+        rank:           in the ranking list wil be considered successfull the first `rank` positions. 
+                        It must be satisfied `1 <= rank <= k2`
+    """
+    assert distances is not None and gallery_ids is not None
+    assert distances.dim() == 2 and gallery_ids.dim() == 1
+    assert distances.shape[1] == gallery_ids.shape[0]
 
     idxs = torch.argsort(distances, dim=-1)
-    if limit_to_first_elements > 0:
-        idxs = idxs[:, :limit_to_first_elements]
     # let's retrieve gallery IDs corresponding to these indexes
     calc_ids = torch.zeros_like(idxs, dtype=torch.int, requires_grad=False).to(distances.device)
     for i in range(distances.shape[0]):
@@ -13,15 +25,15 @@ def _calculate_ids(distances:torch.Tensor, gallery_ids:torch.Tensor, limit_to_fi
     return calc_ids
 
 
-def calculate_CMC(distances:torch.Tensor, query_ids:torch.Tensor, gallery_ids:torch.Tensor, rank:int=1):
+def calculate_CMC(calc_ids_matrix:torch.Tensor, query_ids:torch.Tensor, rank:int=1):
     """
     Args:
 
-        distances:      matrix [k1, k2], where `Distances[i,j]` is the pairwise distances between query-i and gallery-j.
-        query_ids:      vector [k1] where `query_ids[i]` is the ID corresponding to query-i.
-        gallery_ids:    vector [k2] where `gallery_ids[j]` is the ID corresponding to gallery-j.
-        rank:           in the ranking list wil be considered successfull the first `rank` positions. 
-                        It must be satisfied `1 <= rank <= k2`
+        calc_ids_matrix:    matrix [k1, k2], where element `calc_ids_matrix[i:]` contains IDs of gallery items, \
+                            sorted in increasing distance order respect query `i`.
+        query_ids:          vector [k1] where `query_ids[i]` is the ID corresponding to query-i.
+        rank:               in the ranking list wil be considered successfull the first `rank` positions. \
+                            It must be satisfied `1 <= rank <= k2`
     Note:
 
         In the gallery there must be at least one instance for each ID in the queries. If not, CMC will be calculated as 0.0 fot that query.
@@ -30,28 +42,30 @@ def calculate_CMC(distances:torch.Tensor, query_ids:torch.Tensor, gallery_ids:to
 
         the CMC rank-`rank` value [0->1].
     """
-    assert distances is not None and query_ids is not None and gallery_ids is not None
-    assert distances.dim() == 2 and query_ids.dim() == 1 and gallery_ids.dim() == 1
-    assert distances.shape[0] == query_ids.shape[0] and distances.shape[1] == gallery_ids.shape[0]
-    assert rank > 0 and rank <= gallery_ids.shape[0]
+    assert calc_ids_matrix is not None and query_ids is not None
+    assert calc_ids_matrix.dim() == 2 and query_ids.dim() == 1
+    assert calc_ids_matrix.shape[0] == query_ids.shape[0]
+    assert rank > 0 and rank <= calc_ids_matrix.shape[1]
 
-    k1, k2  = distances.shape
-    calc_ids = _calculate_ids(distances, gallery_ids, limit_to_first_elements=rank)
+    k1 = query_ids.shape[0]
+    first_calc_ids = calc_ids_matrix[:, :rank]              # we are interested only to first `rank` positions.
 
     query_ids = query_ids.unsqueeze(1).expand(-1, rank)     # (k1, rank)
 
-    max_res, max_idx = (calc_ids == query_ids).max(1)
+    max_res, max_idx = (first_calc_ids == query_ids).max(1)
     well_calc = max_res.sum().item()
     return  well_calc / k1
 
 
-def calculate_mAP(distances:torch.Tensor, query_ids:torch.Tensor, gallery_ids:torch.Tensor):
+def calculate_mAP(calc_ids_matrix:torch.Tensor, query_ids:torch.Tensor):
     """
     Args:
 
-        distances:      matrix [k1, k2], where `Distances[i,j]` is the pairwise distances between query-i and gallery-j.
-        query_ids:      vector [k1] where `query_ids[i]` is the ID corresponding to query-i.
-        gallery_ids:    vector [k2] where `gallery_ids[j]` is the ID corresponding to gallery-j.
+        calc_ids_matrix:    matrix [k1, k2], where element `calc_ids_matrix[i:]` contains IDs of gallery items, \
+                            sorted in increasing distance order respect query `i`.
+        query_ids:          vector [k1] where `query_ids[i]` is the ID corresponding to query-i.
+        rank:               in the ranking list wil be considered successfull the first `rank` positions. \
+                            It must be satisfied `1 <= rank <= k2`
 
     Note:
 
@@ -61,17 +75,15 @@ def calculate_mAP(distances:torch.Tensor, query_ids:torch.Tensor, gallery_ids:to
 
         the mAP value [0->1].
     """
-    assert distances is not None and query_ids is not None and gallery_ids is not None
-    assert distances.dim() == 2 and query_ids.dim() == 1 and gallery_ids.dim() == 1
-    assert distances.shape[0] == query_ids.shape[0] and distances.shape[1] == gallery_ids.shape[0]
+    assert calc_ids_matrix is not None and query_ids is not None
+    assert calc_ids_matrix.dim() == 2 and query_ids.dim() == 1
+    assert calc_ids_matrix.shape[0] == query_ids.shape[0]
 
-    device = distances.device
-    k1, k2  = distances.shape
-
-    calc_ids = _calculate_ids(distances, gallery_ids)
+    device = calc_ids_matrix.device
+    k1, k2  = calc_ids_matrix.shape
     
     query_ids = query_ids.unsqueeze(1).expand(-1, k2)               # (k1, k2)
-    correct_matches = (calc_ids == query_ids)
+    correct_matches = (calc_ids_matrix == query_ids)
 
     well_classified = torch.zeros(size=(k1,), dtype=torch.int, requires_grad=False).to(device=device)
     aps = torch.zeros(size=(k1,), dtype=torch.float, requires_grad=False).to(device=device)
@@ -88,15 +100,17 @@ def calculate_mAP(distances:torch.Tensor, query_ids:torch.Tensor, gallery_ids:to
     return aps.sum(-1).item() / k1
 
 
-def calculate_mINP(distances:torch.Tensor, query_ids:torch.Tensor, gallery_ids:torch.Tensor):
+def calculate_mINP(calc_ids_matrix:torch.Tensor, query_ids:torch.Tensor):
     """
     mINP is a new metric expressed by: M. Ye, et al.,"Deep Learning for Person Re-Identification: A Survey and Outlook" 
 
     Args:
 
-        distances:      matrix [k1, k2], where `Distances[i,j]` is the pairwise distances between query-i and gallery-j.
-        query_ids:      vector [k1] where `query_ids[i]` is the ID corresponding to query-i.
-        gallery_ids:    vector [k2] where `gallery_ids[j]` is the ID corresponding to gallery-j.
+        calc_ids_matrix:    matrix [k1, k2], where element `calc_ids_matrix[i:]` contains IDs of gallery items, \
+                            sorted in increasing distance order respect query `i`.
+        query_ids:          vector [k1] where `query_ids[i]` is the ID corresponding to query-i.
+        rank:               in the ranking list wil be considered successfull the first `rank` positions. \
+                            It must be satisfied `1 <= rank <= k2`
 
     Note:
 
@@ -106,16 +120,15 @@ def calculate_mINP(distances:torch.Tensor, query_ids:torch.Tensor, gallery_ids:t
 
         the mINP value [0->1].
     """
-    assert distances is not None and query_ids is not None and gallery_ids is not None
-    assert distances.dim() == 2 and query_ids.dim() == 1 and gallery_ids.dim() == 1
-    assert distances.shape[0] == query_ids.shape[0] and distances.shape[1] == gallery_ids.shape[0]
+    assert calc_ids_matrix is not None and query_ids is not None
+    assert calc_ids_matrix.dim() == 2 and query_ids.dim() == 1
+    assert calc_ids_matrix.shape[0] == query_ids.shape[0]
 
-    device = distances.device
-    k1, k2  = distances.shape
+    device = calc_ids_matrix.device
+    k1, k2  = calc_ids_matrix.shape
     
-    calc_ids = _calculate_ids(distances, gallery_ids)
     query_ids = query_ids.unsqueeze(1).expand(-1, k2)               # (k1, k2)
-    correct_matches = (calc_ids == query_ids)
+    correct_matches = (calc_ids_matrix == query_ids)
 
     hardest_match_idx = torch.zeros(size=(k1,), dtype=torch.int, requires_grad=False).to(device=device)
     #let's calculate the position of the hardest match for each query.

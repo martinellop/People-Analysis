@@ -19,9 +19,9 @@ export NCCL_P2P_DISABLE=1
 export OMP_NUM_THREADS=1
 
 base="
---train_path /work/cvcs_2022_group02/datasets/single_clip/train
---query_path /work/cvcs_2022_group02/datasets/single_clip/queries
---gallery_path /work/cvcs_2022_group02/datasets/single_clip/gallery
+--train_path /work/cvcs_2022_group02/datasets/singleclip/train
+--query_path /work/cvcs_2022_group02/datasets/singleclip/queries
+--gallery_path /work/cvcs_2022_group02/datasets/singleclip/gallery
 
 --checkpoints_folder /work/cvcs_2022_group02/checkpoints
 --results_folder /work/cvcs_2022_group02/results
@@ -29,11 +29,15 @@ base="
 --num_classes 1500
 --max_epoch 200
 --batch_size 16
+--queries_batch 30
 
 --workers 4
 --test_interval 2
 "
 
+# ACTIVATE ANACONDA
+eval "$(conda shell.bash hook)"
+conda activate /homes/pmartinello/.conda/envs/cvcs22_06
 
 for i in {1..1}
 do
