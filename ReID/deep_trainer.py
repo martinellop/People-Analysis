@@ -109,7 +109,8 @@ def main(args):
 
     # here will be appended loss and metrics values after every epoch
     # --> it will be also saved from checkpoints
-    results_history = ResultsDict()   
+    results_history = ResultsDict()
+    results_dir = args.results_folder   
 
     start_epoch = 0
     if args.resume_checkpoint != "":
@@ -136,6 +137,10 @@ def main(args):
             t2 = time.time()
             test(model, queryloader, galleryloader,dist_function, device, results_history, queries_batch)
             print(f"Test finished in {(time.time()-t2):.1f} seconds.")
+
+            #let's save to file metrics history
+            with open(os.path.join(results_dir, "results_history.json"), "w") as outfile:
+                json.dump(results_history, outfile)
             new_metrics = True
 
         if epoch % args.checkpoint_every:
@@ -158,18 +163,13 @@ def main(args):
             if new_metrics or "loss" in k:
                 last_data += k
                 value = results_history[k][-1]
-                last_data += f": {value:.4f}; "
+                last_data += f": {value:.5f}; "
         print(f"Results epoch {epoch}: {last_data}")
     
     print("+++++ Finished training +++++")
-
-
-    results_dir = args.results_folder
+    
     #saving model
     torch.save(model.state_dict(), os.path.join(results_dir, "model.bin"))
-    #let's save to file metrics history
-    with open(os.path.join(results_dir, "results_history.json"), "w") as outfile:
-        json.dump(results_history, outfile)
 
 
 def train(epoch_idx, model, triplet_loss_function, id_loss_function, center_loss_function, optimizer, trainloader, device, results_history:ResultsDict, verbose:bool=True):
