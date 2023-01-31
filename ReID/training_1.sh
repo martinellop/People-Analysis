@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=ext_hpad
+#SBATCH --job-name=train1
 #SBATCH --output=/homes/pmartinello/output_tr_1.txt
 #SBATCH --error=/homes/pmartinello/error_tr_1.txt
 #SBATCH --gres=gpu:1
@@ -37,7 +37,7 @@ base="
 
 --batch_size 16
 --queries_batch 30
---checkpoint_every 2
+--checkpoint_every 1
 
 --workers 4
 --test_interval 2
