@@ -143,7 +143,7 @@ def main(args):
                 json.dump(results_history, outfile)
             new_metrics = True
 
-        if epoch % args.checkpoint_every:
+        if epoch % args.checkpoint_every == 0:
             # Let's have a checkpoint, saving model status
             state_dict = model.state_dict()
             optimazer_status = optimizer.state_dict()
