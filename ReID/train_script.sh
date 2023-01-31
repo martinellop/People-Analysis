@@ -30,6 +30,7 @@ base="
 --max_epoch 150
 --batch_size 16
 --queries_batch 30
+--checkpoint_every 2
 
 --workers 4
 --test_interval 2
