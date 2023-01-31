@@ -26,7 +26,7 @@ def noise_addiction(img):
     res = res.astype(np.uint8)
     return res
 
-def downsampling(img,scale):
+def downscale(img,scale):
     H,W,C = img.shape
     H /= scale
     W /= scale
@@ -48,7 +48,7 @@ def image_degradation(img,scale = 2):
     # Noise addiction
     res = noise_addiction(res)
     # Downsampling
-    res = downsampling(res, scale)
+    res = downscale(res, scale)
     #Jpeg Compression
     res = jpeg_compression(res)
     return res
@@ -57,7 +57,7 @@ def sharpening(img):
     sharpening_kernel = np.zeros((3,3)) 
     sharpening_kernel[1,1]=2
     sharpening_kernel = sharpening_kernel - np.ones((3,3))/9
-    return cv2.filter2D(img,ddepth=3,kernel=sharpening_kernel)
+    return cv2.filter2D(img,ddepth=-1,kernel=sharpening_kernel)
     
 
 
@@ -78,11 +78,11 @@ class RealESRGANx2:
 
     def __init__(self, model_path, scale_, output=(224,224)):
         model2 = RRDBNet(num_in_ch=3, num_out_ch=3, num_feat=64, num_block=23, num_grow_ch=32, scale=scale_)
-        netscale2 = 2
+        netscale2 = scale_
 
         loadnet2 = torch.load(model_path, map_location=torch.device('cpu'))
         keyname = "params_ema"
-        model = RRDBNet(num_in_ch=3, num_out_ch=3, num_feat=64, num_block=23, num_grow_ch=32, scale=2)
+        model = RRDBNet(num_in_ch=3, num_out_ch=3, num_feat=64, num_block=23, num_grow_ch=32, scale=scale_)
 
         model.load_state_dict(loadnet2[keyname], strict=True)
         model2.eval()
@@ -102,7 +102,7 @@ class RealESRGANx2:
         self._output_dim = output
         self._treshold = (output[0]+output[1])/4
 
-    def upsample(self, img):
+    def upscale(self, img):
         res, _ = self._upsamplerx2.enhance(img)
         return res
 
@@ -123,8 +123,18 @@ class RealESRGANx2:
         h,w,c = img.shape
         
         if h <= self._treshold or w <= self._treshold:
-            return self.filtering(self.upsample(img))
+            return self.filtering(self.upscale(img))
         else:
             return self.filtering(img)
     
+    def filt_up(self, img):
+        return self.upscale(self.filtering(img))
+
+    def up_filt(self,img):
+        return self.filtering(self.upscale(img))
+
+    def up_filt_down(self,img):
+        return downscale(self.filtering(self.upscale(img)),2)
+
+
 

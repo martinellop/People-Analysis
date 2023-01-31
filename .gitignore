@@ -1,3 +1,4 @@
 inputs/
 outputs/
 ReID/deep/checkpoints/*
+*.jpg
