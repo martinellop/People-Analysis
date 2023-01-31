@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=ext_hpad
-#SBATCH --output=/homes/pmartinello/output.txt
-#SBATCH --error=/homes/pmartinello/error.txt
+#SBATCH --output=/homes/pmartinello/output_tr_1.txt
+#SBATCH --error=/homes/pmartinello/error_tr_1.txt
 #SBATCH --gres=gpu:1
 #SBATCH --nodes=1
 #SBATCH --partition=students-prod
@@ -18,16 +18,23 @@ export MASTER_PORT=43437
 export NCCL_P2P_DISABLE=1
 export OMP_NUM_THREADS=1
 
+
 base="
 --train_path /work/cvcs_2022_group02/datasets/singleclip/train
 --query_path /work/cvcs_2022_group02/datasets/singleclip/queries
 --gallery_path /work/cvcs_2022_group02/datasets/singleclip/gallery
 
---checkpoints_folder /work/cvcs_2022_group02/checkpoints
---results_folder /work/cvcs_2022_group02/results
+--checkpoints_folder /work/cvcs_2022_group02/training_1/checkpoints
+--results_folder /work/cvcs_2022_group02/training_1/results
+
+--resume_checkpoint /work/cvcs_2022_group02/training_1/checkpoints/checkpoint_ep44.pth.tar
 
 --num_classes 1500
---max_epoch 150
+--max_epoch 50
+
+--triplet_loss_multiplier 1.0
+--center_loss_multiplier 0.0025
+
 --batch_size 16
 --queries_batch 30
 --checkpoint_every 2

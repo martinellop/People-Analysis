@@ -50,7 +50,6 @@ def parse_options():
     parser.add_argument('--height', type=int, default=224)
     parser.add_argument('--width', type=int, default=224)
     parser.add_argument('--use_bbneck', type=int, default=1)        # logically it's just a bool
-    parser.add_argument('--use_center_loss', type=int, default=1)   # logically it's just a bool
     parser.add_argument('--num_classes', type=int, default=200)     # maximum number of identities to be classified
 
     # Model training
@@ -60,6 +59,9 @@ def parse_options():
     parser.add_argument('--distance_function', type=str, default='cosine')# distance function used in testing.
     parser.add_argument('--queries_batch', type=int, default=-1)    # how many queries to put together while processing distance matrix in testing?
                                                                     # -1 means 'processed all in one batch'
+
+    parser.add_argument('--triplet_loss_multiplier', type=float, default=1.0)   # negative values means that this loss is disabled.
+    parser.add_argument('--center_loss_multiplier', type=float, default=0.0025)   # negative values means that this loss is disabled.
 
     parser.add_argument('--test_interval', type=int, default=1)     # how many epochs to be process before a test?
     parser.add_argument('--triplet_margin', type=float, default=0.3)# the margin used by the triplet loss function. default value taken from [1]
@@ -74,9 +76,7 @@ def parse_options():
 
     args, _ = parser.parse_known_args()
     return args
-
-
-
+    
 
 def main(args):
 
@@ -87,12 +87,15 @@ def main(args):
     trainloader, queryloader, galleryloader = get_dataloader(args)
     model = ReIDModel(args).to(device)
     
-    triplet_loss = TripletLoss(args.triplet_margin).to(device=device)
-    if args.use_center_loss:
-        center_loss = CenterLoss().to(device=device)
+    id_loss = nn.CrossEntropyLoss().to(device=device)
+    if args.triplet_loss_multiplier > 0:
+        triplet_loss = TripletLoss(args.triplet_margin,loss_multiplier=args.triplet_loss_multiplier).to(device=device)
+    else:
+        triplet_loss = None
+    if args.center_loss_multiplier:
+        center_loss = CenterLoss(loss_multiplier=args.center_loss_multiplier).to(device=device)
     else:
         center_loss = None
-    id_loss = nn.CrossEntropyLoss().to(device=device)
 
     queries_batch = args.queries_batch
     
@@ -127,7 +130,7 @@ def main(args):
     for epoch in range(start_epoch, args.max_epoch):
         print("++ Starting epoch", epoch)
         t1 = time.time()
-        train(epoch, model, triplet_loss, id_loss, center_loss, optimizer, trainloader, device, results_history, verbose=False)
+        train(epoch, model, id_loss, triplet_loss, center_loss, optimizer, trainloader, device, results_history, verbose=False)
 
 
         new_metrics = False      
@@ -172,7 +175,7 @@ def main(args):
     torch.save(model.state_dict(), os.path.join(results_dir, "model.bin"))
 
 
-def train(epoch_idx, model, triplet_loss_function, id_loss_function, center_loss_function, optimizer, trainloader, device, results_history:ResultsDict, verbose:bool=True):
+def train(epoch_idx, model, id_loss_function, triplet_loss_function, center_loss_function, optimizer, trainloader, device, results_history:ResultsDict, verbose:bool=True):
     
     # Train one epoch
     model.train()
@@ -182,8 +185,8 @@ def train(epoch_idx, model, triplet_loss_function, id_loss_function, center_loss
     epoch_center_loss = 0
     epoch_total_loss = 0
 
+    use_triplet_loss = (triplet_loss_function is not None)
     use_center_loss = (center_loss_function is not None)
-    center_loss_multiplier = 0.005      # the value pointed out by [1] as best compromise.
 
     for batch_idx, (imgs, pids) in enumerate(trainloader):
         imgs, pids = imgs.to(device=device), pids.to(device=device)
@@ -191,22 +194,22 @@ def train(epoch_idx, model, triplet_loss_function, id_loss_function, center_loss
         optimizer.zero_grad()
         features_vector, class_results  = model(imgs)
 
-        # loss calculation
-        tr_loss = triplet_loss_function(features_vector, pids)
+        # losses calculation
         id_loss = id_loss_function(class_results, pids)
-           
-        
-        # loss merge 
-        loss = tr_loss + id_loss                                # maybe we could add a discount value between loss values
+        loss = id_loss
+
+        if use_triplet_loss:
+            tr_loss = triplet_loss_function(features_vector, pids)
+            loss = loss + tr_loss
+            epoch_triplet_loss += tr_loss.item()
 
         # eventual center loss integration
         if use_center_loss:
-            center_loss = center_loss_multiplier * center_loss_function(features_vector, pids)
+            center_loss = center_loss_function(features_vector, pids)
             loss = loss + center_loss
             epoch_center_loss += center_loss.item()
 
         # saving loss data for final stats
-        epoch_triplet_loss += tr_loss.item()
         epoch_id_loss += id_loss.item()
         epoch_total_loss += loss.item()
 
@@ -219,8 +222,9 @@ def train(epoch_idx, model, triplet_loss_function, id_loss_function, center_loss
     
     
     results_history["total-loss"].append(epoch_total_loss/len_trainloader)
-    results_history["triplet-loss"].append(epoch_triplet_loss/len_trainloader)
     results_history["id-loss"].append(epoch_id_loss/len_trainloader)
+    if use_triplet_loss:
+        results_history["triplet-loss"].append(epoch_triplet_loss/len_trainloader)
     if use_center_loss:
         results_history["center-loss"].append(epoch_center_loss/len_trainloader)
     

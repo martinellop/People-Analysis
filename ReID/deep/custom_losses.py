@@ -15,7 +15,7 @@ class TripletLoss(nn.Module):
         COSINE = 2
 
 
-    def __init__(self, margin=0.3, distance:Distance_mode=Distance_mode.EUCLIDEAN_L2):
+    def __init__(self, margin=0.3, loss_multiplier:float=1.0, distance:Distance_mode=Distance_mode.EUCLIDEAN_L2):
         """
         Args:
             margin (float): margin for triplet.
@@ -24,6 +24,7 @@ class TripletLoss(nn.Module):
         super(TripletLoss, self).__init__()
         self.distance = distance
         self.ranking_loss = nn.MarginRankingLoss(margin=margin)
+        self.loss_multiplier = loss_multiplier
 
     def forward(self, inputs:torch.Tensor, targets:torch.Tensor):
         """
@@ -50,7 +51,7 @@ class TripletLoss(nn.Module):
         # Compute ranking hinge loss
         y = torch.ones_like(hardest_dist_an)
         loss = self.ranking_loss(hardest_dist_an, hardest_dist_ap, y)
-        return loss
+        return self.loss_multiplier* loss
 
 
 class CenterLoss(nn.Module):
@@ -59,6 +60,10 @@ class CenterLoss(nn.Module):
 
     Minimizing Center loss increases intra-class compactness. mINP metric should have a strong benefit by this loss minimization.
     """
+    def __init__(self, loss_multiplier:float=1.0):
+        super(CenterLoss, self).__init__()
+        self.loss_multiplier = loss_multiplier
+
     def forward(self, inputs:torch.Tensor, targets:torch.Tensor):
         """
         Args:
@@ -93,4 +98,4 @@ class CenterLoss(nn.Module):
             # here we already have the center corresponding to this id. let's then calculate the distance from this point.
             distances[i] = L2_distance(inputs[i].unsqueeze(0), centers[inverse_indices[i]].unsqueeze(0), squared_distance=True)
 
-        return 0.5 * distances.sum()   
+        return self.loss_multiplier * distances.sum()   
