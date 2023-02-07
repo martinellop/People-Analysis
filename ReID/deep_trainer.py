@@ -41,9 +41,7 @@ def parse_options():
     parser = argparse.ArgumentParser()
 
     # Dataset args
-    parser.add_argument('--train_path', type=str)
-    parser.add_argument('--query_path', type=str)
-    parser.add_argument('--gallery_path', type=str)
+    parser.add_argument('--dataset_path', type=str)
 
     # Model structure
     parser.add_argument('--model', type=str, default="resnet18")    # choose your model here
@@ -134,7 +132,7 @@ def main(args):
 
 
         new_metrics = False      
-        if epoch % args.test_interval == 0 or epoch+1 == args.max_epoch:
+        if epoch % args.test_interval == 0:
             # Valuta il trainset
             print("Start test")
             t2 = time.time()

@@ -20,9 +20,7 @@ export OMP_NUM_THREADS=1
 
 
 base="
---train_path /work/cvcs_2022_group02/datasets/multiclip/train
---query_path /work/cvcs_2022_group02/datasets/multiclip/queries
---gallery_path /work/cvcs_2022_group02/datasets/multiclip/gallery
+--dataset_path /work/cvcs_2022_group02/datasets/multiclip
 
 --checkpoints_folder /work/cvcs_2022_group02/training_4/checkpoints
 --results_folder /work/cvcs_2022_group02/training_4/results

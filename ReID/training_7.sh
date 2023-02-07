@@ -20,17 +20,17 @@ export OMP_NUM_THREADS=1
 
 
 base="
---train_path /work/cvcs_2022_group02/datasets/singleclip/train
---query_path /work/cvcs_2022_group02/datasets/singleclip/queries
---gallery_path /work/cvcs_2022_group02/datasets/singleclip/gallery
+--dataset_path /work/cvcs_2022_group02/datasets/singleclip
 
 --checkpoints_folder /work/cvcs_2022_group02/training_7/checkpoints
 --results_folder /work/cvcs_2022_group02/training_7/results
 
+--model resnet50
 --num_classes 1000
 --max_epoch 50
 
---distance_function euclidean
+--resume_checkpoint /work/cvcs_2022_group02/training_7/checkpoints/checkpoint_epXY.pth.tar
+
 --triplet_loss_multiplier 10.0
 --center_loss_multiplier 0.025
 

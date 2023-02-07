@@ -3,8 +3,8 @@ import torch.nn as nn
 
 import math
 
-from tools import ResultsDict
-from evaluation_metrics import calculate_CMC, calculate_mAP, calculate_mINP, pair_ids_with_distance_matrix
+from .evaluation_metrics import calculate_CMC, calculate_mAP, calculate_mINP, pair_ids_with_distance_matrix
+from .tools import ResultsDict
 
 
 @torch.no_grad()
@@ -28,7 +28,7 @@ def extract_feature(model:nn.Module, dataloader, device):
 
 
 
-def test(model, queryloader, galleryloader, dist_function, device, results_history:ResultsDict, queries_batch:int=-1):
+def test(model, queryloader, galleryloader, dist_function, device, results_history:ResultsDict, queries_batch:int=-1, verbose:bool=False):
     """
     Using given query and gallery datasets, let's try to perform a retrieval, looking for performance.
 
@@ -38,9 +38,11 @@ def test(model, queryloader, galleryloader, dist_function, device, results_histo
         * mINP --> see [3]
     """
     model.eval()
-    #print("Test: Extract Query")
+    if verbose:
+        print("Test: Extract Query")
     qf, q_pids = extract_feature(model, queryloader, device)
-    #print("Test: Extract Gallery")
+    if verbose:
+        print("Test: Extract Gallery")
     gf, g_pids = extract_feature(model, galleryloader, device)
 
 
@@ -66,8 +68,12 @@ def test(model, queryloader, galleryloader, dist_function, device, results_histo
         batched_q_pids = q_pids[start_idx:max_idx]
         n_elements = batched_qf.shape[0]
 
-        # Let's calculate distance matrix between queries and gallery items    
+        # Let's calculate distance matrix between queries and gallery items
+        if verbose:
+            print("start distance matrix calculation..")   
         distances = dist_function(batched_qf,gf)
+        if verbose:
+            print("distance matrix calculated.")
 
         calc_ids_matrix = pair_ids_with_distance_matrix(distances, g_pids)
 
@@ -79,6 +85,8 @@ def test(model, queryloader, galleryloader, dist_function, device, results_histo
         average_rank_10 += calculate_CMC(calc_ids_matrix, batched_q_pids, 10) * n_elements
         average_rank_15 += calculate_CMC(calc_ids_matrix, batched_q_pids, 15) * n_elements
         average_rank_20 += calculate_CMC(calc_ids_matrix, batched_q_pids, 20) * n_elements
+        if verbose:
+            print(f"Calculated metrics of query_batch {i} out of {n_batches}")
     
     results_history['mAP'].append(average_map/n_queries)
     results_history['mINP'].append(average_mINP/n_queries)

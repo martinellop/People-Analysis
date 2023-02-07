@@ -16,7 +16,7 @@ def read_image(img_path):
     return img
 
 
-def get_dataloader(args):
+def get_dataloader(args, dataset:str='motsynth'):
     # Create the 3 dataloader object
     # TODO: magari creare diversi transorm per train, query e gallery, che magari differiscono
     transform = T.Compose([
@@ -25,16 +25,32 @@ def get_dataloader(args):
         T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
     ])
 
-    # TODO: controllare se l'opzione pin_memory funziona anche senza GPU
-    train_dl = DataLoader(MOTSynthDataset(args.train_path, transform), shuffle=True,
-                          batch_size=args.batch_size, num_workers=args.workers,
-                          pin_memory=True)
-    query_dl = DataLoader(MOTSynthDataset(args.query_path, transform), shuffle=True,
-                          batch_size=args.batch_size, num_workers=args.workers,
-                          pin_memory=True)
-    gallery_dl = DataLoader(MOTSynthDataset(args.gallery_path, transform), shuffle=True,
+    train_path = os.path.join(args.dataset_path, "train")
+    queries_path = os.path.join(args.dataset_path, "queries")
+    gallery_path = os.path.join(args.dataset_path, "gallery")
+
+    if dataset == 'motsynth':
+        train_dl = DataLoader(MOTSynthDataset(train_path, transform), shuffle=True,
                             batch_size=args.batch_size, num_workers=args.workers,
                             pin_memory=True)
+        query_dl = DataLoader(MOTSynthDataset(queries_path, transform), shuffle=True,
+                            batch_size=args.batch_size, num_workers=args.workers,
+                            pin_memory=True)
+        gallery_dl = DataLoader(MOTSynthDataset(gallery_path, transform), shuffle=True,
+                                batch_size=args.batch_size, num_workers=args.workers,
+                                pin_memory=True)
+    elif dataset == 'market1501':
+        train_dl = DataLoader(Market_1501_dataset(train_path, transform), shuffle=True,
+                            batch_size=args.batch_size, num_workers=args.workers,
+                            pin_memory=True)
+        query_dl = DataLoader(Market_1501_dataset(queries_path, transform), shuffle=True,
+                            batch_size=args.batch_size, num_workers=args.workers,
+                            pin_memory=True)
+        gallery_dl = DataLoader(Market_1501_dataset(gallery_path, transform), shuffle=True,
+                                batch_size=args.batch_size, num_workers=args.workers,
+                                pin_memory=True)
+    else:
+        raise Exception("invalid dataset.")
 
     return train_dl, query_dl, gallery_dl
 
