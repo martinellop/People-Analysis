@@ -77,7 +77,7 @@ class HogDescriber_scikit(PersonDescriber):
         return res
 
 
-# much faster then scikit version, but probably less accurate (?)
+# much faster then scikit version
 class HogDescriber_torch(PersonDescriber):
     def __init__(self, hyperprms : HogHyperParams, device:torch.device):
         self._cells_per_block_ = hyperprms.cells_per_block

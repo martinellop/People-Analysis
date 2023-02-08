@@ -1,7 +1,7 @@
 #!/bin/bash
-#SBATCH --job-name=train7
-#SBATCH --output=/homes/pmartinello/output_tr_7.txt
-#SBATCH --error=/homes/pmartinello/error_tr_7.txt
+#SBATCH --job-name=train8
+#SBATCH --output=/homes/pmartinello/output_tr_8.txt
+#SBATCH --error=/homes/pmartinello/error_tr_8.txt
 #SBATCH --gres=gpu:1
 #SBATCH --nodes=1
 #SBATCH --partition=students-prod
@@ -22,12 +22,14 @@ export OMP_NUM_THREADS=1
 base="
 --dataset_path /work/cvcs_2022_group02/datasets/singleclip
 
---checkpoints_folder /work/cvcs_2022_group02/training_7/checkpoints
---results_folder /work/cvcs_2022_group02/training_7/results
+--checkpoints_folder /work/cvcs_2022_group02/training_8/checkpoints
+--results_folder /work/cvcs_2022_group02/training_8/results
 
 --model resnet50
 --num_classes 1000
---max_epoch 50
+--max_epoch 100
+
+--resume_checkpoint /work/cvcs_2022_group02/training_7/checkpoints/checkpoint_ep49.pth.tar
 
 --triplet_loss_multiplier 10.0
 --center_loss_multiplier 0.025

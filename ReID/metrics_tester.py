@@ -51,6 +51,7 @@ if __name__ == "__main__":
     dataset_paths = {}
     dataset_paths['motsynth'] = "D:\\Data\\University\\MOTSynth\\dataset_singleclip"
     dataset_paths['market1501'] = "D:\\Data\\University\\market-1501"
+    dataset_paths['mars'] = "D:\\Data\\University\\MARS_dataset_test"
 
     #let's try all possible combinations.
     for dist in ['cosine', 'euclidean']:
@@ -61,7 +62,7 @@ if __name__ == "__main__":
         else:
             raise Exception("You must select a valid distance function.")   
 
-        for dataset in ['motsynth', 'market1501']:
+        for dataset in ['motsynth', 'market1501', 'mars']:
             results= ResultsDict()
             args.dataset_path = dataset_paths[dataset]
             trainloader, queryloader, galleryloader = get_dataloader(args, dataset)

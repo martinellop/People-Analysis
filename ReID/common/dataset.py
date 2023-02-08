@@ -49,6 +49,15 @@ def get_dataloader(args, dataset:str='motsynth'):
         gallery_dl = DataLoader(Market_1501_dataset(gallery_path, transform), shuffle=True,
                                 batch_size=args.batch_size, num_workers=args.workers,
                                 pin_memory=True)
+    elif dataset == 'mars':
+        train_dl = None
+        #MARS dataset has been processed in the same way of MOTSynth.
+        query_dl = DataLoader(MOTSynthDataset(queries_path, transform), shuffle=True,
+                            batch_size=args.batch_size, num_workers=args.workers,
+                            pin_memory=True)
+        gallery_dl = DataLoader(MOTSynthDataset(gallery_path, transform), shuffle=True,
+                                batch_size=args.batch_size, num_workers=args.workers,
+                                pin_memory=True)
     else:
         raise Exception("invalid dataset.")
 
@@ -84,8 +93,8 @@ class MOTSynthDataset(CustomDataset):
         # Loads the image list and filter it
         people_list = sorted(os.listdir(basepath))
 
-        if len(people_list) == 0:
-            raise IOError("The dataset folder is empty")
+        #if len(people_list) == 0:
+        #    raise IOError("The dataset folder is empty")
 
         clean_people_list = [item for item in people_list if os.path.isdir(os.path.join(basepath, item))]
         # In our dataset there are a lot of folders, one for each identity.
