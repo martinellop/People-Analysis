@@ -8,10 +8,10 @@ from skimage.feature import hog
 
 
 class HogHyperParams():
-    def __init__(self, nbins:int=9, pixels_per_cell:int=8, cells_per_block=1):
+    def __init__(self, nbins:int=9, pixels_per_cell:int=8, use_colors:bool=False):
         self.nbins= nbins
         self.pixels_per_cell = pixels_per_cell
-        self.cells_per_block = cells_per_block
+        self.use_colors = use_colors
 
 
 class HOGLayer(nn.Module):
@@ -77,6 +77,31 @@ class HogDescriber_scikit(PersonDescriber):
         return res
 
 
+
+
+
+
+class HOGModel(nn.Module):
+    def __init__(self, nbins:int=9, pixels_per_cell=8, use_colors=False):
+        super(HOGModel, self).__init__()
+        self.model = HOGLayer(nbins, pixels_per_cell)
+        self.use_colors = use_colors
+
+
+    def forward(self, x:torch.Tensor):
+        if not self.use_colors:
+            x = rgb_to_grayscale(x).float()
+            #print(x.shape)
+            return self.model(x)
+        else:
+            #print(x[:,0].shape)
+            r = self.model(x[:,0].unsqueeze(1).float())
+            g = self.model(x[:,1].unsqueeze(1).float())
+            b = self.model(x[:,2].unsqueeze(1).float())
+            return torch.cat((r,g,b),1)
+
+
+# TO BE UPDATED
 # much faster then scikit version
 class HogDescriber_torch(PersonDescriber):
     def __init__(self, hyperprms : HogHyperParams, device:torch.device):

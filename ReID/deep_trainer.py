@@ -236,5 +236,6 @@ if __name__ == '__main__':
 Possible improvements:
     + modify network last stage from stride 2 to stride 1  (Last stride)--> [1]
 
-    + study if better cosine or euclidean distance in inference time. According to [1], it should be better cosine.
+    + add reranking algorithms
+    + consider temporal information
 """

@@ -10,8 +10,6 @@ def pair_ids_with_distance_matrix(distances:torch.Tensor, gallery_ids:torch.Tens
 
         distances:      matrix [k1, k2], where `Distances[i,j]` is the pairwise distances between query-i and gallery-j.
         gallery_ids:    vector [k2] where `gallery_ids[j]` is the ID corresponding to gallery-j.
-        rank:           in the ranking list wil be considered successfull the first `rank` positions. 
-                        It must be satisfied `1 <= rank <= k2`
     """
     assert distances is not None and gallery_ids is not None
     assert distances.dim() == 2 and gallery_ids.dim() == 1
