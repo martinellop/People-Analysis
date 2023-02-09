@@ -1,4 +1,5 @@
 import torch
+import torch.nn as nn
 import time
 import os
 os.environ["KMP_DUPLICATE_LIB_OK"]='True'
@@ -6,12 +7,15 @@ import sys
 import random
 import cv2
 from torchvision.ops import roi_pool
-from common.PersonDescriber import PersonDescriber
+import torchvision.transforms as T
+
 from common.MOTutils import MOTannotation,plot_one_box
 from common.PeopleDB import PeopleDB
-from common.distances import L2_distance, Mahalanobis_distance
-from HOG.HogDescriber import HogDescriber_scikit, HogDescriber_torch, HogHyperParams
+from common.distances import L2_distance, Cosine_distance
 
+from HOG.HogDescriber import HOGModel
+
+from deep.model import ReIDModel
 
 module_folder = os.path.abspath(os.path.join("PeopleDetector", "utils"))
 print(module_folder)
@@ -20,23 +24,31 @@ from datasets import LoadImages
 
 
 class HyperParams:
-    def __init__(self, target_resolution=(128,64), frame_stride=1, dist_function=L2_distance, threshold:float=1.0, db_memory:int=20*10):
+    def __init__(self, target_resolution=(128,64), frame_stride=1, dist_function=L2_distance, threshold:float=1.0, max_descr_per_id:int=3, db_memory:int=20*10):
         self.target_res = target_resolution
         self.frame_stride = frame_stride
         self.dist_function = dist_function
         self.threshold = threshold
+        self.max_descr_per_id = max_descr_per_id
         self.frame_memory = db_memory
 
-def Evaluate_On_MOTSynth(describer:PersonDescriber, hyperPrms:HyperParams, device:torch.device, visualize:bool=False, max_time:float=-1):
+def Evaluate_On_MOTSynth(model:nn.Module, hyperPrms:HyperParams, preprocess:T, device:torch.device, visualize:bool=True, save_output:bool=False, max_time:float=-1):
+    
+    # example clip data:
     data_folder = os.path.join(".", "inputs", "videos", "512")
     video_path = os.path.join(data_folder, "512.mp4")
     annotations_path = os.path.join(data_folder, "gt", "gt.txt")
     video = LoadImages(video_path,1920)
     framerate = 20
 
+    if save_output:
+        output_path = os.path.join(".", "outputs", "videos", "512.mp4")
+        vid_writer = cv2.VideoWriter(output_path, cv2.VideoWriter_fourcc(*'mp4v'), framerate, (1920, 1080))
+
+
     max_frame = round(max_time * framerate) if max_time > 0 else -1
 
-    db = PeopleDB(hyperPrms.dist_function, hyperPrms.threshold, int(hyperPrms.frame_memory / hyperPrms.frame_stride), device=device)
+    db = PeopleDB(hyperPrms.dist_function, hyperPrms.threshold, int(hyperPrms.frame_memory / hyperPrms.frame_stride), hyperPrms.max_descr_per_id, device=device)
     data = MOTannotation(annotations_path)
     ncolors = 255
     colors = [[random.randint(0, 255) for _ in range(3)] for _ in range(ncolors)]
@@ -62,13 +74,15 @@ def Evaluate_On_MOTSynth(describer:PersonDescriber, hyperPrms:HyperParams, devic
         #print(boxes.shape, boxes)
         frame_tensor = torch.from_numpy(im0s).to(dtype=torch.float, device=device).permute(2,0,1).unsqueeze(0) / 255.0
         crops = roi_pool(frame_tensor,boxes, hyperPrms.target_res).to(device)
+        crops = preprocess(crops)
+
         t2 = time.time()
         #print("crops after roiPooling:", crops.shape)
-        descriptors = describer.Extract_Description(crops, use_colors=False)#.to(device) 
+        descriptors = model(crops)
         print("descriptors:", descriptors.shape)
         for i in range(descriptors.shape[0]):
             descr = descriptors[i]
-            target_id, new_one = db.Get_ID(descr,update_factor=1.0)
+            target_id, new_one = db.Get_ID(descr)
             id_ = torch.Tensor((target_id,)).to(dtype=torch.long, device=device).reshape(1,1)
             target_ids = torch.cat((target_ids, id_))
             #report = f"+ Created {target_id} at frame {current_frame}" if new_one else f"Recognized {target_id} at frame {current_frame}"
@@ -78,14 +92,17 @@ def Evaluate_On_MOTSynth(describer:PersonDescriber, hyperPrms:HyperParams, devic
         t4 = time.time()
         s = f'frame {current_frame} BB mgmt: {round((t1 - t0)*1000)}ms; ROIpooling: {round((t2 - t1)*1000)}ms; Descr gen: {round((t3 - t2)*1000)}ms; frameShift: {round((t4 - t3)*1000)}ms'
 
-        if visualize:
-            background = im0s
+        frame = im0s
+        for i in range(boxes.shape[0]):
+            id = int(target_ids[i])
+            plot_one_box(boxes[i,1:5],frame,label=str(id),color=colors[id%ncolors])
 
-            for i in range(boxes.shape[0]):
-                id = int(target_ids[i])
-                plot_one_box(boxes[i,1:5],background,label=str(id),color=colors[id%ncolors])
-            cv2.imshow("img", background)
-            cv2.waitKey(500)  # 1 millisecond
+        if save_output:
+            vid_writer.write(frame)
+
+        if visualize:
+            cv2.imshow("img", frame)
+            cv2.waitKey(1)  # 1 millisecond
         t5 =time.time()
 
 
@@ -101,20 +118,27 @@ def Evaluate_On_MOTSynth(describer:PersonDescriber, hyperPrms:HyperParams, devic
 
 
 
-def Mahalanobis_dist(x,y):
-    return Mahalanobis_distance(x,y, inverse_covs)
-
-
 if __name__=='__main__':
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    hogPrms = HogHyperParams()
 
-    l2_dist=True
-
-    if l2_dist:
-        hyperprms = HyperParams(threshold=1.95,target_resolution=(128,64))
+    use_hog_descr = False   #setting to True means to use the hog model, if False it will be used the deep model.
+    
+    if use_hog_descr:
+        hyperprms = HyperParams(threshold=2.5,target_resolution=(128,64))
+        model = HOGModel().to(device)
     else:
-        inverse_covs = torch.load(os.path.join("ReID","inv_covariances.bin"))
-        hyperprms = HyperParams(threshold=0.5,target_resolution=(128,64),dist_function=Mahalanobis_dist)
-    describer = HogDescriber_torch(hogPrms,device)
-    Evaluate_On_MOTSynth(describer, hyperprms, device, visualize=True, max_time=10)
+        #let's load the deep model
+        hyperprms = HyperParams(threshold=0.4,target_resolution=(224,224), dist_function=Cosine_distance)
+        model = ReIDModel(model="resnet18").to(device)
+        weights_path = "D:\\Data\\University\\People-Analysis\\ReID\\deep\\results\\training6\\model.bin"
+        weights = torch.load(weights_path)
+        model.load_state_dict(weights)
+    
+    transform = T.Compose([
+        #T.ToTensor(),
+        T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+    ])
+
+    model.eval()
+    with torch.no_grad():
+        Evaluate_On_MOTSynth(model, hyperprms, transform, device, visualize=False, save_output=True, max_time=-1)

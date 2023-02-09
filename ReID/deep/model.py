@@ -31,14 +31,14 @@ def weights_init_classifier(m):
             nn.init.constant_(m.bias, 0.0)
 
 class ReIDModel(nn.Module):
-    def __init__(self, args):
+    def __init__(self, model:str="resnet50", num_classes:int=1000, use_bbneck:bool=True):
         super(ReIDModel, self).__init__()
 
-        if args.model == "resnet50":
+        if model == "resnet50":
             model = models.resnet50(weights=models.ResNet50_Weights.DEFAULT)
             self.base = nn.Sequential(*list(model.children())[:-2]) # avg-pool layer is still included (not removed)
             output_n = 2048
-        elif args.model == "resnet18":
+        elif model == "resnet18":
             model = models.resnet18(weights=models.ResNet18_Weights.DEFAULT)
             self.base = nn.Sequential(*list(model.children())[:-2]) # avg-pool layer is still included (not removed)
             output_n = 512
@@ -46,14 +46,14 @@ class ReIDModel(nn.Module):
             raise Exception("Please specify the model")
    
         #using bbneck idea, expressed in [1]
-        self.use_bbneck = args.use_bbneck 
+        self.use_bbneck = use_bbneck 
 
         if not self.use_bbneck:
-            self.classifier = nn.Linear(output_n, args.num_classes)
+            self.classifier = nn.Linear(output_n, num_classes)
         else:
             self.bottleneck = nn.BatchNorm1d(output_n)
             self.bottleneck.bias.requires_grad_(False)  # no shift
-            self.classifier = nn.Linear(output_n, args.num_classes, bias=False)
+            self.classifier = nn.Linear(output_n, num_classes, bias=False)
             self.bottleneck.apply(weights_init_kaiming)
             self.classifier.apply(weights_init_classifier)
 

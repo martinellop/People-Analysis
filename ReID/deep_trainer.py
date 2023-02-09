@@ -83,7 +83,7 @@ def main(args):
         print("You are running on", torch.cuda.get_device_name(), "gpu.")
 
     trainloader, queryloader, galleryloader = get_dataloader(args)
-    model = ReIDModel(args).to(device)
+    model = ReIDModel(args.model, args.num_classes, args.use_bbneck).to(device)
     
     id_loss = nn.CrossEntropyLoss().to(device=device)
     if args.triplet_loss_multiplier > 0:

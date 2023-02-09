@@ -54,7 +54,7 @@ if __name__ == "__main__":
 
     if args.use_deep_model:
         #deep model
-        model = ReIDModel(args).to(device)
+        model = ReIDModel(args.model, args.num_classes, args.use_bbneck).to(device)
         weights = torch.load(args.model_weights)
         model.load_state_dict(weights)
     else:
@@ -71,9 +71,7 @@ if __name__ == "__main__":
 
     #let's try all possible combinations.
     possible_dists = ['cosine', 'euclidean']
-    #possible_dists = ['euclidean']
     possible_datasets = ['motsynth', 'market1501', 'mars']
-    #possible_datasets = ['market1501', 'mars']
 
     for dist in possible_dists:
         if dist == 'cosine':
