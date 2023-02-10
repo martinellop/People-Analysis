@@ -42,7 +42,7 @@ def Evaluate_On_MOTSynth(model:nn.Module, hyperPrms:HyperParams, preprocess:T, d
     framerate = 20
 
     if save_output:
-        output_path = os.path.join(".", "outputs", "videos", "512.mp4")
+        output_path = os.path.join(".", "outputs", "videos", "512_HOG.mp4")
         vid_writer = cv2.VideoWriter(output_path, cv2.VideoWriter_fourcc(*'mp4v'), framerate, (1920, 1080))
 
 
@@ -97,6 +97,10 @@ def Evaluate_On_MOTSynth(model:nn.Module, hyperPrms:HyperParams, preprocess:T, d
             id = int(target_ids[i])
             plot_one_box(boxes[i,1:5],frame,label=str(id),color=colors[id%ncolors])
 
+            # Calcolo posizione media
+            mean = (int((boxes[i,1]+boxes[i,3])/2), int((boxes[i,2]+boxes[i,4])/2))
+            plot_history(db.Update_ID_position(id, mean), frame, color=colors[id % ncolors])
+
         if save_output:
             vid_writer.write(frame)
 
@@ -114,9 +118,10 @@ def Evaluate_On_MOTSynth(model:nn.Module, hyperPrms:HyperParams, preprocess:T, d
 
         if(max_frame > 0 and current_frame >= max_frame-1):
             break
-    db.Clear()
 
-
+def plot_history(history, frame, color):
+    for i in range(len(history)-1):
+        cv2.line(frame, history[i], history[i+1], color, 3)
 
 if __name__=='__main__':
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -124,7 +129,7 @@ if __name__=='__main__':
     use_hog_descr = False   #setting to True means to use the hog model, if False it will be used the deep model.
     
     if use_hog_descr:
-        hyperprms = HyperParams(threshold=2.5,target_resolution=(128,64))
+        hyperprms = HyperParams(threshold=2.55,target_resolution=(128,64))
         model = HOGModel().to(device)
     else:
         #let's load the deep model
@@ -135,10 +140,9 @@ if __name__=='__main__':
         model.load_state_dict(weights)
     
     transform = T.Compose([
-        #T.ToTensor(),
         T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
     ])
 
     model.eval()
     with torch.no_grad():
-        Evaluate_On_MOTSynth(model, hyperprms, transform, device, visualize=False, save_output=True, max_time=-1)
+        Evaluate_On_MOTSynth(model, hyperprms, transform, device, visualize=True, save_output=False, max_time=22.5)

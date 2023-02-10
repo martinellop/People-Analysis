@@ -2,7 +2,7 @@ import torch
 import random
 
 class PeopleDB:
-    def __init__(self, dist_function, dist_threshold:float, frame_memory:int, max_descr_per_id:int, device:torch.device=None):
+    def __init__(self, dist_function, dist_threshold:float, frame_memory:int, max_descr_per_id:int, positions_buffer:int=30, device:torch.device=None):
         self._dist_function_ = dist_function
         self._dist_threshold_ = dist_threshold
         self._frame_memory_ = frame_memory
@@ -14,6 +14,10 @@ class PeopleDB:
 
         self._current_frame_ = 0
         self._last_id_generated = 0
+
+        self._max_positions = positions_buffer  #how many positions to save? -1 to disable this feature.
+        if(positions_buffer > 0):
+            self._last_positions = {}   #dictionary in which, for each identity, will be stored the last n positions
 
     def Get_ID(self, descriptor:torch.Tensor):
         '''
@@ -86,16 +90,31 @@ class PeopleDB:
         #print(self._vectors_.shape, self._last_update_.shape, self._ids_.shape)
         toKeep =  self._last_update_ > (self._current_frame_ - self._frame_memory_)
         toKeep = toKeep.flatten()
+
+        toRemove = ~toKeep
+        ids_to_remove = self._ids_[toRemove]
+
+        self._ids_ = self._ids_[toKeep]
         self._vectors_ = self._vectors_[toKeep]
         self._last_update_ = self._last_update_[toKeep]
         self._counts_ = self._counts_[toKeep]
-        self._ids_ = self._ids_[toKeep]
+        
+        for id in ids_to_remove:
+            print(f"Removed ID ", id.item())
+            if self._max_positions > 0:
+                del self._last_positions[int(id.item())]
 
         #print(self._vectors_.shape, self._last_update_.shape, self._ids_.shape)
 
-    def Clear(self):
-        #necessary?
-        del self._vectors_
-        del self._ids_
-        del self._counts_
-        del self._last_update_
+
+    def Update_ID_position(self, personID:int, current_pos):
+
+        if not personID in self._last_positions.keys():
+            self._last_positions[personID] = []
+        
+        self._last_positions[personID].append(current_pos)
+        if len(self._last_positions[personID]) > self._max_positions:
+            self._last_positions[personID].pop(0)
+
+        return self._last_positions[personID]
+    

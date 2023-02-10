@@ -7,18 +7,24 @@ import torch
 import torchvision.transforms as T
 from torchvision.ops import roi_pool
 
-from PeopleDetector.utils.datasets import LoadImages
-from PeopleDetector.PeopleDetector import extract_bb
+
+# Faccio questa aggiunta per evitare un problema nel import del modello di yolo
+import sys
+module_folder = os.path.abspath(os.path.join("PeopleDetector"))
+module_folder2 = os.path.abspath(os.path.join("PeopleDetector", "utils"))
+sys.path.insert(0, module_folder)
+sys.path.insert(1, module_folder2)
+
+
+from datasets import LoadImages
+from PeopleDetector import extract_bb
 from ReID.common.PeopleDB import PeopleDB
 from ReID.common.distances import L2_distance, Cosine_distance
 from ReID.common.MOTutils import plot_one_box
 from ReID.deep.model import ReIDModel
 
 
-# Faccio questa aggiunta per evitare un problema nel import del modello di yolo
-import sys
-module_folder = os.path.abspath(os.path.join("PeopleDetector"))
-sys.path.insert(0, module_folder)
+
 
 
 class HyperParams:
@@ -31,16 +37,15 @@ class HyperParams:
         self.frame_memory = db_memory
 
 
-def analyze_video(video_path, output_path, model, yolomodel, preprocess, device, hyperPrms):
+def analyze_video(video_path, output_path, model, yolomodel, preprocess, device, hyperPrms, just_visualize=False):
     #video_resolution = (852,480)
     #video_resolution = (960,540)
     video_resolution = (1920,1080)
     video = LoadImages(video_path,video_resolution[0])
     out_framerate = 10
 
-    position_history = {}
-
-    video_writer = cv2.VideoWriter(output_path, cv2.VideoWriter_fourcc(*"MJPG"), out_framerate, video_resolution)
+    if not just_visualize:
+        video_writer = cv2.VideoWriter(output_path, cv2.VideoWriter_fourcc(*"MJPG"), out_framerate, video_resolution)
 
     db = PeopleDB(hyperPrms.dist_function, hyperPrms.threshold, int(hyperPrms.frame_memory / hyperPrms.frame_stride),
                   hyperPrms.max_descr_per_id, device=device)
@@ -80,17 +85,18 @@ def analyze_video(video_path, output_path, model, yolomodel, preprocess, device,
 
             # Calcolo posizione media
             mean = (int((boxes[i,1]+boxes[i,3])/2), int((boxes[i,2]+boxes[i,4])/2))
-            try:
-                position_history[id].append(mean)
-            except KeyError:
-                position_history[id] = [mean]
 
             plot_one_box(boxes[i, 1:5], frame, label=str(id), color=colors[id % ncolors])
-            plot_history(position_history[id], frame, color=colors[id % ncolors])
+            plot_history(db.Update_ID_position(id, mean), frame, color=colors[id % ncolors])
 
-        video_writer.write(frame)
+        if just_visualize:
+            cv2.imshow("img", frame)
+            cv2.waitKey(1)  # 1 millisecond
+        else:
+            video_writer.write(frame)
 
-    video_writer.release()
+    if not just_visualize:
+        video_writer.release()
 
 
 def plot_history(history, frame, color):
@@ -99,12 +105,13 @@ def plot_history(history, frame, color):
 
 
 if __name__ == "__main__":
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    #device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cpu")
 
     hyperprms = HyperParams(threshold=0.4, target_resolution=(224, 224), dist_function=Cosine_distance)
     model = ReIDModel(model="resnet18").to(device)
     weights_path = "ReID/deep/results/training6/model.bin"
-    yolo_weights = "/Users/infopz/Not_iCloud/People-Analyzer/PeopleDetector/yolov7-tiny.pt"
+    yolo_weights = "PeopleDetector/yolov7-tiny.pt"
     weights = torch.load(weights_path, map_location=device)
     model.load_state_dict(weights)
 
@@ -117,4 +124,4 @@ if __name__ == "__main__":
 
     model.eval()
     with torch.no_grad():
-        analyze_video(videopath, outputpath, model, yolo_weights, transform, device, hyperprms)
+        analyze_video(videopath, outputpath, model, yolo_weights, transform, device, hyperprms, just_visualize=True)

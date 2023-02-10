@@ -236,6 +236,6 @@ if __name__ == '__main__':
 Possible improvements:
     + modify network last stage from stride 2 to stride 1  (Last stride)--> [1]
 
-    + add reranking algorithms
+    + add reranking algorithms --> [2]
     + consider temporal information
 """
