@@ -9,12 +9,12 @@ import torch
 import torch.backends.cudnn as cudnn
 from numpy import random
 
-from models.experimental import attempt_load
-from utils.datasets import LoadStreams, LoadImages
-from utils.general import check_img_size, check_requirements, check_imshow, non_max_suppression, apply_classifier, \
+from .models.experimental import attempt_load
+from .utils.datasets import LoadStreams, LoadImages
+from .utils.general import check_img_size, check_requirements, check_imshow, non_max_suppression, apply_classifier, \
     scale_coords, xyxy2xywh, strip_optimizer, set_logging, increment_path
-from utils.plots import plot_one_box
-from utils.torch_utils import select_device, load_classifier, time_synchronized, TracedModel
+from .utils.plots import plot_one_box
+from .utils.torch_utils import select_device, load_classifier, time_synchronized, TracedModel
 
 
 debug_mode=False
@@ -86,6 +86,8 @@ def detect(settings):
     old_path = ""
     last_frame_saved = -1
 
+    frames_bb = {}
+
     for path, img, im0s, vid_cap in dataset:
 
         if frame_number >= 0 and old_path != path:
@@ -94,7 +96,6 @@ def detect(settings):
             last_frame_saved = -1
         old_path = path
         frame_number += 1
-
 
         if dataset.mode == 'video':
             if last_frame_saved >= 0 and frame_number - last_frame_saved < settings.video_crop_min_frame_interval:
@@ -154,8 +155,20 @@ def detect(settings):
                 correct_labels=0
                 for *xyxy, conf, cls in reversed(det):
 
-                    #debugPrint(f"class:{names[int(cls)]}\t", "bbox: ", xyxy)
+                    # Aggiungo lo 0 della classe
+                    bb = torch.tensor(xyxy).view(1, 4)
+                    zero = torch.zeros((1,1))
+                    bb = torch.cat((zero, bb), 1)
 
+                    if frame_number in frames_bb:
+                        frames_bb[frame_number] = torch.cat((frames_bb[frame_number], bb))
+                    else:
+                        frames_bb[frame_number] = bb
+
+
+                last_frame_saved = frame_number
+
+                """
                     if save_txt:  # Write to file
                         xywh = (xyxy2xywh(torch.tensor(xyxy).view(1, 4)) / gn).view(-1).tolist()  # normalized xywh
                         line = (cls, *xywh, conf) if settings.save_conf else (cls, *xywh)  # label format
@@ -188,7 +201,8 @@ def detect(settings):
                         label = f'{names[int(cls)]} {conf:.2f}'
                         plot_one_box(xyxy, im0, label=label, color=colors[int(cls)], line_thickness=1)
                         correct_labels += 1
-                    
+                """
+
             # Print time (inference + NMS)
             print(f'{s}Done. ({(1E3 * (t2 - t1)):.1f}ms) Inference, ({(1E3 * (t3 - t2)):.1f}ms) NMS')
 
@@ -224,8 +238,19 @@ def detect(settings):
 
     print(f'Done. ({time.time() - t0:.3f}s)')
 
+    return frames_bb
 
-if __name__ == '__main__':
+
+def plot_one_box(x, img, color=None, label=None, line_thickness=3):
+    # Plots one bounding box on image img
+    tl = line_thickness or round(0.002 * (img.shape[0] + img.shape[1]) / 2) + 1  # line/font thickness
+    color = color or [random.randint(0, 255) for _ in range(3)]
+    c1, c2 = (int(x[0]), int(x[1])), (int(x[2]), int(x[3]))
+    #print(f"c1:{c1}, c2:{c2}")
+    cv2.rectangle(img, c1, c2, color, thickness=tl, lineType=cv2.LINE_AA)
+
+
+def extract_bb(source, framerate, weights, minarea=15000):
     parser = argparse.ArgumentParser()
     parser.add_argument('--weights', nargs='+', type=str, default='yolov7.pt', help='model.pt path(s)')
     parser.add_argument('--source', type=str, default='inference/images', help='source')  # file/folder, 0 for webcam
@@ -249,9 +274,13 @@ if __name__ == '__main__':
     parser.add_argument('--video_crop_max_area', type=int, default=-1, help='maximum number of pixels in detected box for a crop')
     parser.add_argument('--video_crop_min_frame_interval', type=int, default=1, help='minimum number of frames to be skipped from last crop-saved frame')
 
+    settings = parser.parse_args(["--source", source,
+                                  "--weights", weights,
+                                  "--class", "0",
+                                  "--exist-ok",
+                                  "--save_only_crop",
+                                  "--save-txt",
+                                  "--video_crop_min_area", str(minarea),
+                                  "--video_crop_min_frame_interval", str(framerate)])
 
-
-    settings = parser.parse_args()
-    print(settings)
-    #check_requirements(exclude=('pycocotools', 'thop'))
-    detect(settings)
+    return detect(settings)
