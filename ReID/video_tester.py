@@ -24,12 +24,13 @@ from datasets import LoadImages
 
 
 class HyperParams:
-    def __init__(self, target_resolution=(128,64), frame_stride=1, dist_function=L2_distance, threshold:float=1.0, max_descr_per_id:int=3, db_memory:int=20*10):
+    def __init__(self, target_resolution=(128,64), frame_stride=1, dist_function=L2_distance, threshold:float=1.0, max_descr_per_id:int=3,positions_per_id=10, db_memory:int=20*10):
         self.target_res = target_resolution
         self.frame_stride = frame_stride
         self.dist_function = dist_function
         self.threshold = threshold
         self.max_descr_per_id = max_descr_per_id
+        self.positions_per_id = positions_per_id
         self.frame_memory = db_memory
 
 def Evaluate_On_MOTSynth(model:nn.Module, hyperPrms:HyperParams, preprocess:T, device:torch.device, visualize:bool=True, save_output:bool=False, max_time:float=-1):
@@ -48,7 +49,7 @@ def Evaluate_On_MOTSynth(model:nn.Module, hyperPrms:HyperParams, preprocess:T, d
 
     max_frame = round(max_time * framerate) if max_time > 0 else -1
 
-    db = PeopleDB(hyperPrms.dist_function, hyperPrms.threshold, int(hyperPrms.frame_memory / hyperPrms.frame_stride), hyperPrms.max_descr_per_id, device=device)
+    db = PeopleDB(hyperPrms.dist_function, hyperPrms.threshold, int(hyperPrms.frame_memory / hyperPrms.frame_stride), hyperPrms.max_descr_per_id, hyperPrms.positions_per_id, device=device)
     data = MOTannotation(annotations_path)
     ncolors = 255
     colors = [[random.randint(0, 255) for _ in range(3)] for _ in range(ncolors)]

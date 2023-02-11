@@ -1,5 +1,5 @@
 inputs/
 outputs/
-ReID/deep/checkpoints/*
 *.jpg
 *.tar
+*.pt

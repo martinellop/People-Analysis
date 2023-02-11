@@ -28,31 +28,30 @@ from ReID.deep.model import ReIDModel
 
 
 class HyperParams:
-    def __init__(self, target_resolution=(128,64), frame_stride=15, dist_function=L2_distance, threshold:float=1.0, max_descr_per_id:int=3, db_memory:int=20*10):
+    def __init__(self, target_resolution=(128,64), frame_stride=1, dist_function=L2_distance, threshold:float=1.0, max_descr_per_id:int=3,positions_per_id=10, db_memory:int=20*10):
         self.target_res = target_resolution
         self.frame_stride = frame_stride
         self.dist_function = dist_function
         self.threshold = threshold
         self.max_descr_per_id = max_descr_per_id
+        self.positions_per_id = positions_per_id
         self.frame_memory = db_memory
 
 
-def analyze_video(video_path, output_path, model, yolomodel, preprocess, device, hyperPrms, just_visualize=False):
-    #video_resolution = (852,480)
-    #video_resolution = (960,540)
-    video_resolution = (1920,1080)
+def analyze_video(video_path, output_path, model, yolomodel, preprocess, device, hyperPrms:HyperParams, just_visualize=False, video_resolution=(1920,1080), frame_rate=30):
     video = LoadImages(video_path,video_resolution[0])
-    out_framerate = 10
+    out_framerate = frame_rate / hyperPrms.frame_stride
 
     if not just_visualize:
-        video_writer = cv2.VideoWriter(output_path, cv2.VideoWriter_fourcc(*"MJPG"), out_framerate, video_resolution)
+        video_writer = cv2.VideoWriter(output_path, cv2.VideoWriter_fourcc(*'mp4v'), out_framerate, video_resolution)
 
     db = PeopleDB(hyperPrms.dist_function, hyperPrms.threshold, int(hyperPrms.frame_memory / hyperPrms.frame_stride),
-                  hyperPrms.max_descr_per_id, device=device)
+                  hyperPrms.max_descr_per_id, hyperPrms.positions_per_id, device=device)
     ncolors = 255
     colors = [[random.randint(0, 255) for _ in range(3)] for _ in range(ncolors)]
     current_frame = -1
 
+    print(video_path, output_path)
     # Uso Yolo per estrarre tutte le Bounding box
     frames_bb = extract_bb(video_path, hyperprms.frame_stride, weights=yolomodel)
     analyzed_frames = frames_bb.keys()
@@ -86,8 +85,8 @@ def analyze_video(video_path, output_path, model, yolomodel, preprocess, device,
             # Calcolo posizione media
             mean = (int((boxes[i,1]+boxes[i,3])/2), int((boxes[i,2]+boxes[i,4])/2))
 
-            plot_one_box(boxes[i, 1:5], frame, label=str(id), color=colors[id % ncolors])
-            plot_history(db.Update_ID_position(id, mean), frame, color=colors[id % ncolors])
+            plot_one_box(boxes[i, 1:5], frame, label=str(id), color=colors[id % ncolors], line_thickness=2)
+            plot_history(db.Update_ID_position(id, mean), frame, color=colors[id % ncolors],line_thickness=2)
 
         if just_visualize:
             cv2.imshow("img", frame)
@@ -99,16 +98,16 @@ def analyze_video(video_path, output_path, model, yolomodel, preprocess, device,
         video_writer.release()
 
 
-def plot_history(history, frame, color):
+def plot_history(history, frame, color, line_thickness=3):
     for i in range(len(history)-1):
-        cv2.line(frame, history[i], history[i+1], color, 3)
+        cv2.line(frame, history[i], history[i+1], color, line_thickness)
 
 
 if __name__ == "__main__":
     #device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     device = torch.device("cpu")
 
-    hyperprms = HyperParams(threshold=0.4, target_resolution=(224, 224), dist_function=Cosine_distance, frame_stride=2)
+    hyperprms = HyperParams(threshold=0.35, target_resolution=(224, 224), dist_function=Cosine_distance, frame_stride=1, positions_per_id=100)
     model = ReIDModel(model="resnet18").to(device)
     weights_path = "ReID/deep/results/training6/model.bin"
     yolo_weights = "PeopleDetector/yolov7-tiny.pt"
@@ -119,9 +118,9 @@ if __name__ == "__main__":
         T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
     ])
 
-    videopath = "inputs/videos/example_MOT20.mp4"
-    outputpath = "out.avi"
+    videopath = "inputs/videos/MOT15_example.mp4"
+    outputpath = "outputs/videos/MOT15_example.mp4"
 
     model.eval()
     with torch.no_grad():
-        analyze_video(videopath, outputpath, model, yolo_weights, transform, device, hyperprms, just_visualize=True)
+        analyze_video(videopath, outputpath, model, yolo_weights, transform, device, hyperprms, just_visualize=False, video_resolution=(1280,720), frame_rate=30)
