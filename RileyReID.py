@@ -17,7 +17,7 @@ sys.path.insert(1, module_folder2)
 
 
 from datasets import LoadImages
-from PeopleDetector import extract_bb
+from BBextractor import extract_bb
 from ReID.common.PeopleDB import PeopleDB
 from ReID.common.distances import L2_distance, Cosine_distance
 from ReID.common.MOTutils import plot_one_box
@@ -108,7 +108,7 @@ if __name__ == "__main__":
     #device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     device = torch.device("cpu")
 
-    hyperprms = HyperParams(threshold=0.4, target_resolution=(224, 224), dist_function=Cosine_distance)
+    hyperprms = HyperParams(threshold=0.4, target_resolution=(224, 224), dist_function=Cosine_distance, frame_stride=2)
     model = ReIDModel(model="resnet18").to(device)
     weights_path = "ReID/deep/results/training6/model.bin"
     yolo_weights = "PeopleDetector/yolov7-tiny.pt"
