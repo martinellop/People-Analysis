@@ -107,9 +107,9 @@ if __name__ == "__main__":
     #device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     device = torch.device("cpu")
 
-    hyperprms = HyperParams(threshold=0.35, target_resolution=(224, 224), dist_function=Cosine_distance, frame_stride=1, positions_per_id=100)
-    model = ReIDModel(model="resnet18").to(device)
-    weights_path = "ReID/deep/results/training6/model.bin"
+    hyperprms = HyperParams(threshold=0.35, target_resolution=(224, 224), dist_function=Cosine_distance, frame_stride=2, positions_per_id=30)
+    model = ReIDModel(model="resnet50").to(device)
+    weights_path = "ReID/deep/results/training8/model.bin"
     yolo_weights = "PeopleDetector/yolov7-tiny.pt"
     weights = torch.load(weights_path, map_location=device)
     model.load_state_dict(weights)
@@ -118,9 +118,9 @@ if __name__ == "__main__":
         T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
     ])
 
-    videopath = "inputs/videos/MOT15_example.mp4"
-    outputpath = "outputs/videos/MOT15_example.mp4"
+    videopath = "inputs/videos/test_video.mp4"
+    outputpath = "outputs/videos/test_video.mp4"
 
     model.eval()
     with torch.no_grad():
-        analyze_video(videopath, outputpath, model, yolo_weights, transform, device, hyperprms, just_visualize=False, video_resolution=(1280,720), frame_rate=30)
+        analyze_video(videopath, outputpath, model, yolo_weights, transform, device, hyperprms, just_visualize=False, video_resolution=(960,540), frame_rate=30)

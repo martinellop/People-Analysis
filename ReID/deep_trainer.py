@@ -45,6 +45,7 @@ def parse_options():
 
     # Model structure
     parser.add_argument('--model', type=str, default="resnet18")    # choose your model here
+    parser.add_argument('--load_weights', type=str, default="")     # eventually, load your starting weights here
     parser.add_argument('--height', type=int, default=224)
     parser.add_argument('--width', type=int, default=224)
     parser.add_argument('--use_bbneck', type=int, default=1)        # logically it's just a bool
@@ -114,6 +115,12 @@ def main(args):
     results_dir = args.results_folder   
 
     start_epoch = 0
+
+    if args.load_weights != "":
+        print(f"Loading custom weights from {args.load_weights}")
+        weights = torch.load(args.load_weights)
+        model.load_state_dict(weights)
+
     if args.resume_checkpoint != "":
         print(f"Loading checkpoint from {args.resume_checkpoint}")
         checkpoint = torch.load(args.resume_checkpoint)
