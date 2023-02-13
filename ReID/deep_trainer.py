@@ -42,6 +42,7 @@ def parse_options():
 
     # Dataset args
     parser.add_argument('--dataset_path', type=str)
+    parser.add_argument('--dataset_type', type=str, default='motsynth')
 
     # Model structure
     parser.add_argument('--model', type=str, default="resnet18")    # choose your model here
@@ -83,7 +84,7 @@ def main(args):
     if torch.cuda.is_available():
         print("You are running on", torch.cuda.get_device_name(), "gpu.")
 
-    trainloader, queryloader, galleryloader = get_dataloader(args)
+    trainloader, queryloader, galleryloader = get_dataloader(args,dataset=args.dataset_type)
     model = ReIDModel(args.model, args.num_classes, args.use_bbneck).to(device)
     
     id_loss = nn.CrossEntropyLoss().to(device=device)

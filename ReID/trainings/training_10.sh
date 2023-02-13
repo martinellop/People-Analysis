@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=train8
+#SBATCH --job-name=train10
 #SBATCH --output=/homes/pmartinello/output_tr_10.txt
 #SBATCH --error=/homes/pmartinello/error_tr_10.txt
 #SBATCH --gres=gpu:1
@@ -21,6 +21,7 @@ export OMP_NUM_THREADS=1
 
 base="
 --dataset_path /work/cvcs_2022_group02/datasets/market-1501
+--dataset_type market1501
 
 --checkpoints_folder /work/cvcs_2022_group02/training_10/checkpoints
 --results_folder /work/cvcs_2022_group02/training_10/results
@@ -29,7 +30,7 @@ base="
 --num_classes 1000
 --max_epoch 50
 
---load_weights /work/cvcs_2022_group02/training_8/results/model.bin
+--load_weights /work/cvcs_2022_group02/training_7/results/model.bin
 
 --triplet_loss_multiplier 10.0
 --center_loss_multiplier 0.025

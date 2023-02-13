@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=train8
+#SBATCH --job-name=train9
 #SBATCH --output=/homes/pmartinello/output_tr_9.txt
 #SBATCH --error=/homes/pmartinello/error_tr_9.txt
 #SBATCH --gres=gpu:1
@@ -21,6 +21,7 @@ export OMP_NUM_THREADS=1
 
 base="
 --dataset_path /work/cvcs_2022_group02/datasets/market-1501
+--dataset_type market1501
 
 --checkpoints_folder /work/cvcs_2022_group02/training_9/checkpoints
 --results_folder /work/cvcs_2022_group02/training_9/results
