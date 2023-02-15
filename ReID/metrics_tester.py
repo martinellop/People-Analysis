@@ -71,9 +71,9 @@ if __name__ == "__main__":
 
     #let's try all possible combinations.
     #possible_dists = ['cosine', 'euclidean']
-    possible_dists = ['euclidean']
-    #possible_datasets = ['motsynth', 'market1501', 'mars']
-    possible_datasets = ['mars']
+    possible_dists = ['cosine']
+    possible_datasets = ['motsynth', 'market1501', 'mars']
+    #possible_datasets = ['market1501', 'mars']
 
     for dist in possible_dists:
         if dist == 'cosine':

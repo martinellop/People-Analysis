@@ -4,6 +4,7 @@
 #SBATCH --error=/homes/pmartinello/error_tr_11.txt
 #SBATCH --gres=gpu:1
 #SBATCH --nodes=1
+#SBATCH --time=10:00:00
 #SBATCH --partition=students-prod
 
 export PYTHONNOUSERSITE=1
