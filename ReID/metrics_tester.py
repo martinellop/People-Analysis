@@ -73,7 +73,6 @@ if __name__ == "__main__":
     #possible_dists = ['cosine', 'euclidean']
     possible_dists = ['cosine']
     possible_datasets = ['motsynth', 'market1501', 'mars']
-    #possible_datasets = ['market1501', 'mars']
 
     for dist in possible_dists:
         if dist == 'cosine':
@@ -86,7 +85,7 @@ if __name__ == "__main__":
         for dataset in possible_datasets:
             results= ResultsDict()
             args.dataset_path = dataset_paths[dataset]
-            trainloader, queryloader, galleryloader = get_dataloader(args, dataset)
+            trainloader, queryloader, galleryloader = get_dataloader(args=args, dataset=dataset)
             test(model, queryloader, galleryloader,dist_function, device, results, args.queries_batch, verbose=True)
             print(f"++++ Finished testing with {dist} dist and {dataset} dataset. Results: {results}")
             with open(os.path.join(results_dir, f"final_metrics_{dist}_{dataset}.json"), "w") as outfile:
