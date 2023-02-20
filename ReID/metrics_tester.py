@@ -27,6 +27,7 @@ def parse_options():
     parser.add_argument('--model', type=str, default="resnet18")    # choose your model here
     parser.add_argument('--use_bbneck', type=int, default=1)        # logically it's just a bool
     parser.add_argument('--num_classes', type=int, default=200)     # maximum number of identities to be classified
+    parser.add_argument('--force_descr_dim', type=int, default=-1)  # if you want a specific dimension for descriptor feature vector, set it here
     parser.add_argument('--batch_size', type=int, default=16)
     parser.add_argument('--model_weights', type=str)
 
@@ -54,7 +55,7 @@ if __name__ == "__main__":
 
     if args.use_deep_model:
         #deep model
-        model = ReIDModel(args.model, args.num_classes, args.use_bbneck).to(device)
+        model = ReIDModel(args.model, args.num_classes, args.use_bbneck, args.force_descr_dim).to(device)
         weights = torch.load(args.model_weights)
         model.load_state_dict(weights)
     else:

@@ -31,31 +31,38 @@ def weights_init_classifier(m):
             nn.init.constant_(m.bias, 0.0)
 
 class ReIDModel(nn.Module):
-    def __init__(self, model:str="resnet50", num_classes:int=1000, use_bbneck:bool=True):
+    def __init__(self, model:str="resnet50", num_classes:int=1000, use_batch_norm:bool=True, force_descr_dim:int=-1):
         super(ReIDModel, self).__init__()
 
         if model == "resnet50":
             model = models.resnet50(weights=models.ResNet50_Weights.DEFAULT)
-            self.base = nn.Sequential(*list(model.children())[:-2]) # avg-pool layer is still included (not removed)
+            self.base = nn.Sequential(*list(model.children())[:-1]) # avg-pool layer is still included (not removed)
             output_n = 2048
         elif model == "resnet18":
             model = models.resnet18(weights=models.ResNet18_Weights.DEFAULT)
-            self.base = nn.Sequential(*list(model.children())[:-2]) # avg-pool layer is still included (not removed)
+            self.base = nn.Sequential(*list(model.children())[:-1]) # avg-pool layer is still included (not removed)
             output_n = 512
         else:
             raise Exception("Please specify the model")
    
         #using bbneck idea, expressed in [1]
-        self.use_bbneck = use_bbneck 
-
-        if not self.use_bbneck:
-            self.classifier = nn.Linear(output_n, num_classes)
+        self.use_batch_norm = use_batch_norm 
+        if force_descr_dim > 0 and force_descr_dim != output_n:
+            final_dim = force_descr_dim
+            print("Forcing feature vector to size", final_dim)
+            self.bottleneck = nn.Linear(output_n, final_dim, bias=False)
+            self.bottleneck.apply(weights_init_classifier)
         else:
-            self.bottleneck = nn.BatchNorm1d(output_n)
-            self.bottleneck.bias.requires_grad_(False)  # no shift
-            self.classifier = nn.Linear(output_n, num_classes, bias=False)
-            self.bottleneck.apply(weights_init_kaiming)
-            self.classifier.apply(weights_init_classifier)
+            final_dim = output_n
+            self.bottleneck = None
+
+        if self.use_batch_norm:
+            self.batch_norm = nn.BatchNorm1d(final_dim)
+            self.batch_norm.bias.requires_grad_(False)  # no shift
+            self.batch_norm.apply(weights_init_kaiming)
+
+        self.classifier = nn.Linear(final_dim, num_classes, bias=False)
+        self.classifier.apply(weights_init_classifier)
 
     def forward(self, x):
         """
@@ -63,12 +70,14 @@ class ReIDModel(nn.Module):
             (features_vector, class_scores):    during training
             (features_vector):                  during inference
         """
-        x = self.base(x)                        # (b, output_n, 7, 7)
-        x = F.avg_pool2d(x, x.size()[2:])       # (b, output_n, 1, 1)
-        global_feat = x.view(x.size(0), -1)     # flatten to (b, output_n)
+        x = self.base(x)                        # (b, final_dim, 1, 1)
+        global_feat = x.view(x.size(0), -1)     # flatten to (b, final_dim)
 
-        if self.use_bbneck:
-            feat = self.bottleneck(global_feat)
+        if self.bottleneck is not None:
+            global_feat = self.bottleneck(global_feat)
+
+        if self.use_batch_norm:
+            feat = self.batch_norm(global_feat)
         else:
             feat = global_feat
 
