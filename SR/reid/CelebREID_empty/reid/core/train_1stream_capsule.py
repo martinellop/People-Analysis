@@ -13,6 +13,9 @@ from torchvision import transforms as T
 import os
 
 print(os.path.abspath(os.curdir))
+'''
+
+'''
 
 from reid.CelebREID_empty.reid.utils.serialization import save_checkpoint
 from reid.CelebREID_empty.reid.utils.meters import AverageMeter

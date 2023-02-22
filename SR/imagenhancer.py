@@ -106,7 +106,7 @@ class RealESRGANx2:
         res, _ = self._upsamplerx2.enhance(img)
         return res
 
-    def filtering(self,img):
+    def filtering(self,img, index):
         '''
         gaussian -> blurring
         laplacian
@@ -116,7 +116,10 @@ class RealESRGANx2:
         deblurring/denoising w/ cnn
         wiener filter/deconv
         '''
-        img = sharpening(img)
+        if index == 0:
+            img = sharpening(img)
+        elif index == 1:
+            img = gaussian_blur(img)
         return img
     
     def enhance(self,img):
@@ -128,13 +131,13 @@ class RealESRGANx2:
             return self.filtering(img)
     
     def filt_up(self, img):
-        return self.upscale(self.filtering(img))
+        return self.upscale(self.filtering(img,0))
 
     def up_filt(self,img):
-        return self.filtering(self.upscale(img))
+        return self.filtering(self.upscale(img),0)
 
     def up_filt_down(self,img):
-        return downscale(self.filtering(self.upscale(img)),2)
+        return downscale(self.filtering(self.upscale(img),0),2)
 
 
 

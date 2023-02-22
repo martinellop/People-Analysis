@@ -3,3 +3,7 @@ outputs/
 *.jpg
 *.tar
 *.pt
+SR/LTCC_ReID_only_queries/
+SR/__MACOSX/
+*.zip
+*.png

@@ -11,8 +11,8 @@ from reid.evaluator import *
 import numpy as np
 
 
-MODEL_PATH = 'C:\\Users\\Leonardo\\Documents\\Universita\\CVCS\\PRJ\\reid\\CelebREID_empty\\model.pth.tar'
-DATASET_FOLDER = "C:\\Users\\Leonardo\\Documents\\Universita\\CVCS\\PRJ\\reid\\CelebREID_empty\\CelebREID_empty\\datasetProva\\pedestrianUnito"
+MODEL_PATH = r'C:\Users\Leonardo\Documents\Repo Github\People-Analyzer\SR\reid\model.pth.tar'
+DATASET_FOLDER = r'C:\Users\Leonardo\Documents\Repo Github\People-Analyzer\SR\reid\CelebREID_empty\datasetProva\pedestrianUnito'
 OUTPUT_FILE = "dataset_features.npy"
 OUTPUT_INDEX = "dataset_order.txt"
 
@@ -42,7 +42,7 @@ def main(args):
 
     print("Start extracting features...\n")
 
-    for i, (img, pids, name) in enumerate(dataloader):
+    for i, (img, _, name) in enumerate(dataloader):
         print("name: ",name)
         # Per ogni batch memorizza i nomi delle immagini
         output_order = output_order + name
