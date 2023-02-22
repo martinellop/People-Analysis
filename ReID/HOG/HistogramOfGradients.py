@@ -3,9 +3,10 @@ import cv2
 from matplotlib import pyplot as plt
 import numpy as np
 import math
+import scipy.stats
 
 class HOG:
-    def __init__(self, img:np.array, nbins:int = 9, cell_w_h:int = 8, gray_image:bool = False):
+    def __init__(self, img:np.ndarray, nbins:int = 9, cell_w_h:int = 8, gray_image:bool = False):
         '''input img must be in 0-255 values'''
         assert img is not None
         self.original_image = img
@@ -35,16 +36,16 @@ class HOG:
                 self.hogs[i,j] = self.__ToBins__(self.gangles[start_x:end_x, start_y:end_y],self.gmag[start_x:end_x, start_y:end_y])
 
         assert np.all(self.hogs>=0), "Not all hog values are >= 0."
+        print(self.hogs.shape)
 
         self.norm_hogs = np.empty([self.__cells_grid_rows__-1, self.__cells_grid_columns__-1, nbins, self.gangles.shape[-1]], dtype=np.float32)
         for i in range(self.__cells_grid_rows__-1):
             for j in range(self.__cells_grid_columns__-1):
                 for k in range(self.hogs.shape[-1]):
-                    self.norm_hogs[i,j,:,k] = self.__Normalize__(self.hogs[i:i+1,j:j+1,:,k])
+                    self.norm_hogs[i,j,:,k] = Normalize(self.hogs[i:i+1,j:j+1,:,k])
 
 
-
-    def __ToBins__(self, cell_dir:np.array, cell_mag:np.array):
+    def __ToBins__(self, cell_dir:np.ndarray, cell_mag:np.ndarray):
         'Takes a 8x8 cell as input, and returns a np.array representing the HOG of that cell.'
         #direction angles in degrees!
         assert cell_dir.shape == cell_mag.shape, f"dir {cell_dir.shape} and mag {cell_mag.shape} matrixes have a different shape."
@@ -85,72 +86,80 @@ class HOG:
                 bins[idx_2] = bins[idx_2] + factor_2 * mag
         return bins
 
-    def __Normalize__(self,v:np.array):
-        norm = np.linalg.norm(v)
-        if norm == 0: 
-            return v
-        return v / norm
+
+def Normalize(v:np.ndarray):
+    norm = np.linalg.norm(v)
+    if norm == 0: 
+        return v
+    return v / norm
 
     #visualization
-    def __PlotAngles__(self, angles:np.array, mags:np.array, thickness:int=1, plot_dim=35):
-        assert plot_dim > 1, "plot_dimf must be greater than 1."
-        assert thickness >= 1, "thickness must be greater then 0."
-        assert angles.dtype is not np.float32 , f"dtype for tensor angles must be float32, but it's {angles.dtype}"
-        assert mags.dtype is not np.float32 , f"dtype for tensor mags must be float32, but it's {mags.dtype}"
-        assert mags.shape == angles.shape, f"tensor mags {mags.shape} has a different shape respect {angles.shape}"
-        assert np.all(mags >= 0), f"mag's value should be >= 0. You passed {mags}"
-        margin = int(plot_dim/8)
 
-        plot_matrix = np.zeros(shape=(plot_dim,plot_dim), dtype=np.uint8)
-        angles = angles*math.pi / 180.0
-        dir = np.array([ -np.cos(angles), -np.sin(angles) ])
-        cy = cx = round(plot_dim/2)
+def PlotAngles(angles:np.ndarray, mags:np.ndarray, thickness:int=1, plot_dim=35):
+    assert plot_dim > 1, "plot_dimf must be greater than 1."
+    assert thickness >= 1, "thickness must be greater then 0."
+    assert angles.dtype is not np.float32 , f"dtype for tensor angles must be float32, but it's {angles.dtype}"
+    assert mags.dtype is not np.float32 , f"dtype for tensor mags must be float32, but it's {mags.dtype}"
+    assert mags.shape == angles.shape, f"tensor mags {mags.shape} has a different shape respect {angles.shape}"
+    #assert np.all(mags >= 0), f"mag's value should be >= 0. You passed {mags}"
+    margin = int(plot_dim/8)
 
-        boost_magnitudes = False
-        mags = np.sqrt(mags) if boost_magnitudes else mags
+    #print(f"mags__:{mags} std:{mags.std()}")
 
-        #let's avoid negative lenghts
-        lenghts = np.maximum(np.ceil(mags * plot_dim/2) -math.floor(thickness/2) - margin, 0)
-        w1 = math.ceil(thickness/2)
-        w2 = thickness - w1
-
-        #let's iterate on the maximum number of pixels which could be written.
-        for i in range( math.ceil(plot_dim/2) -math.floor(thickness/2) - margin):
-            mov =  np.round(dir * i).astype(np.int16)
-            dx_vec = mov[0,:]
-            dy_vec = mov[1,:]
-
-            for j in range(dx_vec.shape[0]): #probably this coudl be avoided and optimized..
-                dx = dx_vec[j]
-                dy = dy_vec[j]
-                if(lenghts[j] >= i):
-                    plot_matrix[cx+dx-w1:cx+dx+w2,cy+dy-w1:cy+dy+w2] = 1
-                    plot_matrix[cx-dx-w1:cx-dx+w2,cy-dy-w1:cy-dy+w2] = 1
-        return plot_matrix
+    plot_matrix = np.zeros(shape=(plot_dim,plot_dim), dtype=np.float32)
+    angles = angles*math.pi / 180.0
+    dir = np.array([ -np.cos(angles), np.sin(angles) ])
+    #print(f"dirs: {dir}")
+    cy = cx = round(plot_dim/2)
 
 
-    #visualize a full histogram
-    def __DrawHistograms__(self, histogram:np.array, plot_dim:int, thick=1):
-        step = 180.0/self.__nbins__
-        angles = np.arange(0,180,step)
-        img = np.empty(shape=(plot_dim,plot_dim,histogram.shape[-1]))
-        for i in range(histogram.shape[-1]): #color channels
-            img[:,:,i] = self.__PlotAngles__(angles,histogram[:,i], thickness=thick, plot_dim=plot_dim)
-        return img
+    mean = mags.mean()
+    std = mags.std()
+    max = mags.max()
+    min = mags.min()
+    #print(f"mean:{mean}; std:{std};")
+    mags = (mags*mags-mean)*std*std
+    #for i in range(mags.size):
+    #  mags[i] = scipy.stats.norm(0.75, pow(std,2.0)).cdf(mags[i])
+    mags[mags<0.01] = 0.0000001
+    #mags = np.power(mags, 0.5)
+    #print(f"++mags2: {mags}")
+
+    w1 = math.ceil(thickness/2)
+    w2 = thickness - w1 +1
+
+    #let's iterate on the maximum number of pixels which could be written.
+    for i in range( math.ceil(plot_dim/2) -math.floor(thickness/2) - margin):
+        mov =  np.round(dir * i).astype(np.int16)
+        dx_vec = mov[0,:]
+        dy_vec = mov[1,:]
+
+        for j in range(dx_vec.shape[0]): #probably this could be avoided and optimized..
+            dx = dx_vec[j]
+            dy = dy_vec[j]
+            plot_matrix[cx+dx-w1:cx+dx+w2,cy+dy-w1:cy+dy+w2] += mags[j]
+            plot_matrix[cx-dx-w1:cx-dx+w2,cy-dy-w1:cy-dy+w2] += mags[j]
+
+    clamp_idx = plot_matrix>1
+    plot_matrix[clamp_idx] = 1.0
+
+    return plot_matrix
 
 
-    def Get_HOG_Graphics(self, thick=1, plot_dim=35):
-        image = np.empty(shape=(self.hogs.shape[0]*plot_dim, self.hogs.shape[1]*plot_dim, self.hogs.shape[-1]), dtype=np.uint8)
+#visualize a full histogram
+def DrawHistograms(histogram:np.ndarray, nbins:int, plot_dim:int, thick=1):
+    step = 180.0/nbins
+    angles = np.arange(0,180,step)
+    img = np.empty(shape=(plot_dim,plot_dim,histogram.shape[-1]), dtype=np.float32)
+    for i in range(histogram.shape[-1]): #color channels
+        img[:,:,i] = PlotAngles(angles,histogram[:,i], thickness=thick, plot_dim=plot_dim)
+    return img
 
-        for i in range(self.hogs.shape[0]):
-            for j in range(self.hogs.shape[1]):
-                image[i*plot_dim:(i+1)*plot_dim, j*plot_dim:(j+1)*plot_dim] = self.__DrawHistograms__(self.hogs[i,j], plot_dim, thick=thick)
-        return np.uint8(image * 255)
 
-    def Get_Norm_HOG_Graphics(self, thick=1, plot_dim=35):
-        image = np.empty(shape=(self.norm_hogs.shape[0]*plot_dim, self.norm_hogs.shape[1]*plot_dim, self.norm_hogs.shape[-1]), dtype=np.uint8)
+def Get_HOG_Graphics(hogs:np.ndarray, nbins:int, thick=1, plot_dim=35):
+    image = np.empty(shape=(hogs.shape[0]*plot_dim, hogs.shape[1]*plot_dim, hogs.shape[-1]), dtype=np.float32)
 
-        for i in range(self.norm_hogs.shape[0]):
-            for j in range(self.norm_hogs.shape[1]):
-                image[i*plot_dim:(i+1)*plot_dim, j*plot_dim:(j+1)*plot_dim] = self.__DrawHistograms__(self.norm_hogs[i,j], plot_dim, thick=thick)
-        return np.uint8(image * 255)
+    for i in range(hogs.shape[0]):
+        for j in range(hogs.shape[1]):
+            image[i*plot_dim:(i+1)*plot_dim, j*plot_dim:(j+1)*plot_dim] = DrawHistograms(hogs[i,j], nbins, plot_dim, thick=thick)
+    return np.uint8(image * 255)

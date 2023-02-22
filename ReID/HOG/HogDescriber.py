@@ -38,11 +38,13 @@ class HOGLayer(nn.Module):
             out = torch.zeros((n, self.nbins, h, w), dtype=torch.float, device=gxy.device)
             out.scatter_(1, phase_int.floor().long()%self.nbins, norm)
             out.scatter_add_(1, phase_int.ceil().long()%self.nbins, 1 - norm)
-            
+            #print("0", out.shape)
             res = self.pooler(out)
+            #print("1", res.shape)
             normed_res = res.reshape(n,self.nbins,-1)
             #normalization on the whole descriptor
-            torch.nn.functional.normalize(normed_res,dim=-1,out=normed_res)
+            #print("2", normed_res.shape)
+            #torch.nn.functional.normalize(normed_res,dim=-1,out=normed_res)
             return normed_res.reshape(n,-1)
 
 

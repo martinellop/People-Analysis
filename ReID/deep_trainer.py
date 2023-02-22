@@ -42,13 +42,17 @@ def parse_options():
 
     # Dataset args
     parser.add_argument('--dataset_path', type=str)
+    parser.add_argument('--dataset_type', type=str, default='motsynth')
 
     # Model structure
     parser.add_argument('--model', type=str, default="resnet18")    # choose your model here
+    parser.add_argument('--load_weights', type=str, default="")     # eventually, load your starting weights here
     parser.add_argument('--height', type=int, default=224)
     parser.add_argument('--width', type=int, default=224)
     parser.add_argument('--use_bbneck', type=int, default=1)        # logically it's just a bool
     parser.add_argument('--num_classes', type=int, default=200)     # maximum number of identities to be classified
+    parser.add_argument('--force_descr_dim', type=int, default=-1)  # if you want a specific dimension for descriptor feature vector, set it here
+
 
     # Model training
     parser.add_argument('--batch_size', type=int, default=16)
@@ -82,8 +86,8 @@ def main(args):
     if torch.cuda.is_available():
         print("You are running on", torch.cuda.get_device_name(), "gpu.")
 
-    trainloader, queryloader, galleryloader = get_dataloader(args)
-    model = ReIDModel(args.model, args.num_classes, args.use_bbneck).to(device)
+    trainloader, queryloader, galleryloader = get_dataloader(args,dataset=args.dataset_type)
+    model = ReIDModel(args.model, args.num_classes, args.use_bbneck, args.force_descr_dim).to(device)
     
     id_loss = nn.CrossEntropyLoss().to(device=device)
     if args.triplet_loss_multiplier > 0:
@@ -114,6 +118,12 @@ def main(args):
     results_dir = args.results_folder   
 
     start_epoch = 0
+
+    if args.load_weights != "":
+        print(f"Loading custom weights from {args.load_weights}")
+        weights = torch.load(args.load_weights)
+        model.load_state_dict(weights)
+
     if args.resume_checkpoint != "":
         print(f"Loading checkpoint from {args.resume_checkpoint}")
         checkpoint = torch.load(args.resume_checkpoint)
