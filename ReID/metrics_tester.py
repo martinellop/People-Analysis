@@ -71,8 +71,8 @@ if __name__ == "__main__":
     dataset_paths['mars'] = "D:\\Data\\University\\MARS_dataset_test"
 
     #let's try all possible combinations.
-    #possible_dists = ['cosine', 'euclidean']
-    possible_dists = ['cosine']
+    possible_dists = ['cosine', 'euclidean']
+    #possible_dists = ['cosine']
     possible_datasets = ['motsynth', 'market1501', 'mars']
 
     for dist in possible_dists:
